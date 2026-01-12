@@ -2,33 +2,42 @@
 
 A lightweight, robust, and fully synchronized HTML5 TV Player for **Home Assistant**.
 
-This project implements a "Smart Backend, Dumb Frontend" architecture. All logic, stream URLs, and configuration reside in Home Assistant (YAML), while the HTML5 player is a generic renderer that syncs state via the HA API.
+This project implements a **"Smart Backend, Dumb Frontend"** architecture. All logic, stream URLs, and configuration reside in Home Assistant (YAML), while the HTML5 player is a generic renderer that syncs state via the Home Assistant API.
 
 ## ✨ Features
 
 * **HLS Streaming:** Native support for `.m3u8` streams via `hls.js`.
-* **Reactive PiP (Picture-in-Picture):** Automatically pops up a security camera feed when a binary sensor (e.g., motion/object detection) triggers.
-* **Full Synchronization:** Volume and Mute are 2-way synced between the UI and HA entities.
-* **Ghost Killer:** Automatically pauses the video stream when the dashboard card is not visible (using `IntersectionObserver`) to save bandwidth and performance.
+* **Reactive PiP (Picture-in-Picture):** Automatically displays a security camera feed overlay when a binary sensor (e.g., motion/object detection) triggers.
+* **Full Synchronization:** Volume and Mute are 2-way synced between the UI and HA entities. If you change the volume in HA, the player updates instantly.
+* **Ghost Killer:** Automatically pauses the video stream when the dashboard card is not visible (using `IntersectionObserver`) to save bandwidth and CPU.
 * **DRY & KISS:** No hardcoded entities in the HTML/JS. Everything is defined in a single Template Sensor.
-* **Dynamic Tokens:** Fetches camera access tokens on-demand to prevent stale authentication.
+* **Dynamic Tokens:** Fetches camera access tokens on-demand to prevent stale authentication issues.
 
 ---
 
 ## 🛠️ Architecture
 
 1.  **Helpers:** Store the state (Channel, Volume, Mute).
-2.  **Template Sensor (The Brain):** Maps channels to URLs, handles logic, and tells the player which entities to control.
+2.  **Template Sensor (The Brain):** Maps channels to URLs, handles logic, and tells the player *which* entities to control.
 3.  **Frontend (The Face):** A generic `tv_player.html` file served via `iframe`.
 
 ---
 
-## 🚀 Installation
+## 🚀 Installation & Configuration
 
-### 1. Create Helpers
-Add the following helpers to your `configuration.yaml` (or via GUI). These store the state of the player.
+### Step 1: Upload Frontend
+1.  Download `tv_player.html` from this repository.
+2.  Upload the file to your Home Assistant `www` folder:
+    * Path: `/config/www/tv_player.html`
+
+### Step 2: Create Helpers
+Add the following helpers to your `configuration.yaml` (or create them via **Settings > Devices & Services > Helpers**).
+
+These entities store the state of the player.
 
 ```yaml
+# configuration.yaml
+
 input_boolean:
   tv_stream_mute:
     name: TV Stream Mute
