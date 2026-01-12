@@ -1,0 +1,74 @@
+input_boolean:
+  tv_stream_mute:
+    name: TV Stream Mute
+    icon: mdi:volume-mute
+
+input_number:
+  tv_stream_volume:
+    name: TV Stream Volume
+    min: 0
+    max: 1
+    step: 0.01
+    mode: slider
+    icon: mdi:volume-high
+
+input_select:
+  tv_stream_source:
+    name: TV Stream Source
+    options:
+      - DR 1
+      - DR 2
+      - TVA
+      - Ramasjang
+      - Storebælt
+    icon: mdi:television
+
+template:
+  - triggers:
+      - trigger: state
+        entity_id:
+          - input_select.tv_stream_source
+          - input_number.tv_stream_volume
+          - input_boolean.tv_stream_mute
+          - binary_sensor.carport_object
+      - trigger: homeassistant
+        event: start
+      - trigger: event
+        event_type: event_template_reloaded
+    sensor:
+      - name: "TV Stream Context"
+        unique_id: cfacca7667c34ffca4310d9d46c1334d
+        state: "{{ states('input_select.tv_stream_source') }}"
+        attributes:
+          config_entity_volume: "input_number.tv_stream_volume"
+          config_entity_mute: "input_boolean.tv_stream_mute"
+          config_entity_camera: "camera.carport_fluent_lens_1"
+          sources: >
+            {% set base_url = "https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=" %}
+            {% set map = {
+              "DR 1": {
+                "image": base_url ~ 2344192,
+                "url": "https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8"
+              },
+              "DR 2": {
+                "image": base_url ~ 46461911,
+                "url": "https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8"
+              },
+              "TVA": {
+                "image": base_url ~ 16100144,
+                "url": "https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8"
+              },
+              "Ramasjang": {
+                "image": base_url ~ 2399380,
+                "url": "https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8"
+              },
+              "Storebælt": {
+                "image": "/local/images/icons/storebælt_tv.jpg",
+                "url": "https://stream.sob.m-dn.net/live/sb1/index.m3u8"
+              }
+            } %}
+            {{ map }}
+          stream_url: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
+          stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
+          stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
+          pip_active: "{{ is_state('binary_sensor.carport_object', 'on') }}"
