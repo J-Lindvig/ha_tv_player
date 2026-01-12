@@ -30,26 +30,24 @@ cards:
             {% set ns = namespace(cards = []) %}
             {% for option in state_attr(options_entity, 'options') %}
               {% if sources is not none and sources[option] is defined %}
-
-              {% if is_state(options_entity, option) %}
-                {% set style = "ha-card { 
-                    border: 3px solid white !important; 
-                    box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
-                    opacity: 1;
-                    transform: scale(1.02); 
-                    transition: all 0.3s ease-in-out;
-                    z-index: 2;
-                  }" %}
-              {% else %}
-                {% set style = "ha-card { 
-                    border: 3px solid transparent; 
-                    opacity: 0.5; 
-                    transform: scale(0.95); 
-                    filter: grayscale(20%);
-                    transition: all 0.3s ease-in-out;
-                  }" %}
-              {% endif %}
-              
+                {% if is_state(options_entity, option) %}
+                  {% set style = "ha-card { 
+                      border: 3px solid white !important; 
+                      box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+                      opacity: 1;
+                      transform: scale(1.02); 
+                      transition: all 0.3s ease-in-out;
+                      z-index: 2;
+                    }" %}
+                {% else %}
+                  {% set style = "ha-card { 
+                      border: 3px solid transparent; 
+                      opacity: 0.5; 
+                      transform: scale(0.95); 
+                      filter: grayscale(20%);
+                      transition: all 0.3s ease-in-out;
+                    }" %}
+                {% endif %}
                 {% set card = {
                   "type": "picture",
                   "image": sources[option].image,
