@@ -1,0 +1,344 @@
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
+    <meta http-equiv="Pragma" content="no-cache">
+    <meta http-equiv="Expires" content="0">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>HA TV Player</title>
+    <style>
+        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
+        video { width: 100vw; height: 100vh; object-fit: contain; }
+
+        /* PiP Vinduet (Skjult som standard) */
+        #pip-overlay {
+            position: absolute; top: 20px; right: 20px; width: 320px; aspect-ratio: 16/9;
+            background: black; border: 2px solid white; box-shadow: 0 0 20px rgba(0,0,0,0.8);
+            z-index: 10; display: none; border-radius: 8px; overflow: hidden; cursor: pointer;
+        }
+        #pip-overlay img { width: 100%; height: 100%; object-fit: cover; }
+
+        /* UI Bundbar */
+        #ui-layer {
+            position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; 
+            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
+            display: flex; align-items: center; padding: 0 20px; box-sizing: border-box;
+            opacity: 0; transition: opacity 0.5s ease; z-index: 20;
+        }
+        #ui-layer.visible { opacity: 1; }
+
+        /* Volume Slider */
+        input[type=range] {
+            -webkit-appearance: none; flex: 1; max-width: 200px; min-width: 80px; height: 6px;
+            background: rgba(255,255,255,0.3); border-radius: 3px; outline: none; margin: 0 15px;
+        }
+        input[type=range]::-webkit-slider-thumb {
+            -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
+            border-radius: 50%; background: #a83232; cursor: pointer; box-shadow: 0 0 10px rgba(0,0,0,0.5);
+        }
+
+        /* Knapper */
+        .icon-btn {
+            background: none; border: none; cursor: pointer; padding: 0; width: 32px; height: 32px;
+            fill: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
+        }
+        #fs-btn { margin-left: auto; }
+    </style>
+    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+</head>
+<body>
+    <video id="video" autoplay playsinline ondblclick="toggleFullscreen()"></video>
+
+    <div id="pip-overlay" onclick="togglePiP()">
+        <img id="pip-img" alt="Camera Stream" />
+    </div>
+
+    <div id="ui-layer">
+        <button id="mute-btn" class="icon-btn" onclick="toggleMute()">
+            <svg viewBox="0 0 24 24" width="28" height="28"><path id="mute-icon-path" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z" /></svg>
+        </button>
+        <input type="range" id="vol-control" min="0" max="1" step="0.05" oninput="setVolume(this.value)" onchange="sendVolumeToHA(this.value)">
+        <button id="fs-btn" class="icon-btn" onclick="toggleFullscreen()">
+            <svg viewBox="0 0 24 24" width="28" height="28"><path id="fs-icon-path" d="M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z" /></svg>
+        </button>
+    </div>
+
+    <script>
+        // =====================================================================
+        // 1. INIT & SIKKERHED (Fail Fast)
+        // =====================================================================
+        const urlParams = new URLSearchParams(window.location.search);
+        const HA_URL = window.location.origin;
+        
+        // Helper defineres først, så den kan bruges straks
+        function getAuthToken() {
+            if (urlParams.get('token')) return urlParams.get('token');
+            try {
+                const rawTokens = window.parent.localStorage.getItem('hassTokens');
+                if (rawTokens) return JSON.parse(rawTokens).access_token;
+            } catch (e) { console.warn("Kunne ikke hente token:", e); }
+            return null;
+        }
+
+        // Hent tokenet NU - og brug const da det er en konstant for denne session
+        const HA_TOKEN = getAuthToken();
+
+        // Stop alt hvis vi mangler adgang
+        if (!HA_TOKEN) {
+            document.body.innerHTML = "<h1 style='color:white; pading: 20px;'>Mangler Token - Log ind i HA</h1>";
+            throw new Error("Authentication failed: No token found");
+        }
+
+        // =====================================================================
+        // 2. GLOBALE VARIABLER
+        // =====================================================================
+        // Entry Point med FALLBACK entitet
+        const PLAYER_ENTITY = urlParams.get('entity') || "sensor.tv_stream_context";
+
+        // Dynamiske Variabler
+        let ENTITY_CAMERA = ""; 
+        let ENTITY_VOLUME = "";
+        let ENTITY_MUTE = "";
+
+        // UI Elementer (Disse er const, da referencen til elementet ikke ændres)
+        const video = document.getElementById('video');
+        const volSlider = document.getElementById('vol-control');
+        const muteIconPath = document.getElementById('mute-icon-path');
+        const uiLayer = document.getElementById('ui-layer');
+
+        // Player State
+        let hls = null;
+        let currentUrl = "";
+        let uiTimeout;
+
+        // =====================================================================
+        // 3. API HELPERS
+        // =====================================================================
+        async function fetchState(entityId) {
+            if (!HA_TOKEN || !entityId) return null;
+            try {
+                const response = await fetch(`${HA_URL}/api/states/${entityId}`, {
+                    headers: { 
+                        "Authorization": `Bearer ${HA_TOKEN}`, 
+                        "Content-Type": "application/json" 
+                    }
+                });
+                if (!response.ok) return null;
+                return await response.json();
+            } catch (e) {
+                console.error(`Fejl ved hentning af ${entityId}:`, e);
+                return null;
+            }
+        }
+
+        async function callService(domain, service, data) {
+            if (!HA_TOKEN) return;
+            await fetch(`${HA_URL}/api/services/${domain}/${service}`, {
+                method: "POST",
+                headers: { "Authorization": `Bearer ${HA_TOKEN}`, "Content-Type": "application/json" },
+                body: JSON.stringify(data)
+            });
+        }
+
+        // =====================================================================
+        // 4. THE BRAIN (SYNC LOOP)
+        // =====================================================================
+        async function syncLoop() {
+            const data = await fetchState(PLAYER_ENTITY);
+            if (!data) return;
+            const attrs = data.attributes;
+
+            // A. CONFIG (Optimering: Assign kun ved ændring)
+            if (attrs.config_entity_camera && ENTITY_CAMERA !== attrs.config_entity_camera) {
+                ENTITY_CAMERA = attrs.config_entity_camera;
+            }
+            if (attrs.config_entity_volume && ENTITY_VOLUME !== attrs.config_entity_volume) {
+                ENTITY_VOLUME = attrs.config_entity_volume;
+            }
+            if (attrs.config_entity_mute && ENTITY_MUTE !== attrs.config_entity_mute) {
+                ENTITY_MUTE = attrs.config_entity_mute;
+            }
+
+            // B. STREAM
+            const stream_url = attrs.stream_url;
+            if (stream_url && stream_url !== currentUrl) {
+                console.log("Skifter kanal til:", stream_url);
+                playStream(stream_url);
+            }
+
+            // C. VOLUME
+            if (attrs.stream_volume !== undefined) {
+                const remoteVol = parseFloat(attrs.stream_volume);
+                if (Math.abs(video.volume - remoteVol) > 0.01) {
+                    video.volume = remoteVol;
+                    volSlider.value = remoteVol;
+                }
+            }
+
+            // D. MUTE
+            if (attrs.stream_mute !== undefined) {
+                const remoteMute = (attrs.stream_mute === true);
+                if (video.muted !== remoteMute) {
+                    video.muted = remoteMute;
+                    updateMuteIcon();
+                }
+            }
+
+            // E. PIP (Reaktiv)
+            if (attrs.pip_active !== undefined) {
+                const pipActive = (attrs.pip_active === true);
+                const pipOn = (document.getElementById('pip-overlay').style.display === 'block');
+                if (pipActive !== pipOn) {
+                    togglePiP(); 
+                }
+            }
+        }
+
+        // =====================================================================
+        // 5. FEATURES (PIP & STREAM)
+        // =====================================================================
+        async function togglePiP() {
+            const pip = document.getElementById('pip-overlay');
+            const img = document.getElementById('pip-img');
+
+            if (pip.style.display === 'block') {
+                pip.style.display = 'none';
+                img.src = "";
+            } else {
+                if (!ENTITY_CAMERA) return console.error("Kamera Entity ID mangler (venter på sync...)");
+
+                const camState = await fetchState(ENTITY_CAMERA);
+                if (camState && camState.attributes.access_token) {
+                    const token = camState.attributes.access_token;
+                    img.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${token}&time=${Date.now()}`;
+                    pip.style.display = 'block';
+                } else {
+                    console.error("Kunne ikke hente kamera token");
+                }
+            }
+        }
+
+        function playStream(url) {
+            stopStream();
+            currentUrl = url;
+
+            if (Hls.isSupported()) {
+                hls = new Hls({
+                    enableWorker: true,
+                    lowLatencyMode: true,
+                    backBufferLength: 90
+                });
+
+                hls.loadSource(url);
+                hls.attachMedia(video);
+                    
+                hls.on(Hls.Events.MANIFEST_PARSED, function() {
+                    console.log("Manifest loaded, klar til afspilning");
+                });
+            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+                video.src = url;
+            }
+        }
+
+        function stopStream() {
+            if (hls) {
+                hls.destroy();
+                hls = null;
+            }
+            video.pause();
+            video.removeAttribute('src');
+            video.load();
+            currentUrl = "";
+        }
+
+        // =====================================================================
+        // 5. UI INTERACTIONS
+        // =====================================================================
+        // Volume Control
+        function setVolume(val) {
+            video.volume = val;
+            if (val > 0 && video.muted) {
+                video.muted = false; 
+                updateMuteIcon();
+            }
+        }
+
+        async function sendVolumeToHA(val) {
+            if (!ENTITY_VOLUME) return;
+            try {
+                await callService("input_number", "set_value", { entity_id: ENTITY_VOLUME, value: parseFloat(val) });
+                
+                if (val > 0 && video.muted) { 
+                    await callService("input_boolean", "turn_off", { entity_id: ENTITY_MUTE });
+                }
+            } catch (e) { console.error("Fejl ved volume upload:", e); }
+        }
+
+        // Mute Control
+        async function toggleMute() {
+            video.muted = !video.muted;
+            updateMuteIcon();
+            if (!ENTITY_MUTE) return;
+            try {
+                await callService("input_boolean", "turn_" + (video.muted ? "on" : "off"), { entity_id: ENTITY_MUTE });
+            } catch (e) { console.error("Fejl ved mute upload:", e); }
+        }
+
+        function updateMuteIcon() {
+            if (video.muted || video.volume === 0) {
+                muteIconPath.setAttribute('d', 'M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.48,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z');
+            } else {
+                muteIconPath.setAttribute('d', 'M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z');
+            }
+        }
+
+        // Display Control
+        function toggleFullscreen() {
+            if (!document.fullscreenElement) {
+                document.documentElement.requestFullscreen().catch(e => console.log(e));
+            } else {
+                if (document.exitFullscreen) document.exitFullscreen();
+            }
+        }
+        
+        document.addEventListener("fullscreenchange", () => {
+            const path = document.getElementById('fs-icon-path');
+            if (document.fullscreenElement) {
+                path.setAttribute('d', 'M5,16H8V19H10V14H5V16M8,8H5V10H10V5H8V8M14,19H16V16H19V14H14V19M16,8V5H14V10H19V8H16Z');
+            } else {
+                path.setAttribute('d', 'M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z');
+            }
+        });
+
+        function showUI() {
+            uiLayer.classList.add('visible');
+            clearTimeout(uiTimeout);
+            uiTimeout = setTimeout(() => { uiLayer.classList.remove('visible'); }, 3000);
+        }
+        ['mousemove','click','touchstart'].forEach(e => document.addEventListener(e, showUI));
+
+        // =====================================================================
+        // 6. SYSTEM START
+        // =====================================================================
+        showUI();
+        updateMuteIcon();
+
+        // Ghost Killer: Pauser video hvis fanen ikke er synlig (Sparer data/CPU)
+        let observer = new IntersectionObserver((entries) => {
+            entries.forEach(entry => {
+                if (entry.isIntersecting) {
+                    video.play().catch(e => console.log("Auto-resume blocked", e));
+                } else {
+                    video.pause();
+                }
+            });
+        }, { threshold: 0.1 });
+        observer.observe(document.body);
+
+        // Start Loop
+        setInterval(syncLoop, 1500);
+        syncLoop();
+    </script>
+</body>
+</html>
