@@ -34,8 +34,8 @@ To use the dashboard card provided below, you need the following installed via *
 ### Step 1: Upload Frontend
 1.  Download `tv_player.html` and `storebælt_tv.jpg` from this repository.
 2.  Upload the files to your Home Assistant `www` folder:
-    * Path: `/config/www/tv_player.html`
-    * Path: `/config/www/images/icons/storebælt_tv.jpg`
+    * `/config/www/tv_player.html`
+    * `/config/www/images/icons/storebælt_tv.jpg`
 
 ### Step 2: Create Helpers
 Add the following helpers to your `configuration.yaml` (or create them via **Settings > Devices & Services > Helpers**).
