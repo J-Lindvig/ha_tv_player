@@ -112,6 +112,7 @@ template:
           stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
           stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
           pip_active: "{{ is_state('binary_sensor.carport_object', 'on') }}"
+```yaml
 
 ### Step 4: Dashboard Card
 Add the player to your Lovelace dashboard using a standard Webpage (Iframe) card.
