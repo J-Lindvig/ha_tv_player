@@ -112,3 +112,97 @@ template:
           stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
           stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
           pip_active: "{{ is_state('binary_sensor.carport_object', 'on') }}"
+
+### Step 4: Dashboard Card
+Add the player to your Lovelace dashboard using a standard Webpage (Iframe) card.
+
+```yaml
+type: panel
+path: tv
+title: TV
+icon: mdi:television
+cards:
+  - type: custom:layout-card
+    layout_type: custom:grid-layout
+    layout:
+      grid-template-columns: 200px 1fr
+      grid-template-rows: 1fr auto
+      grid-gap: 0px
+      margin: 0
+      padding: 0
+      grid-template-areas: |
+        "sidebar video"
+    cards:
+      - type: custom:auto-entities
+        view_layout:
+          grid_area: sidebar
+        card:
+          type: grid
+          columns: 1
+          square: true
+        card_param: cards
+        filter:
+          template: >-
+            {% set sources = state_attr('sensor.tv_stream_context', 'sources') %}
+            {% set options_entity = "input_select.tv_stream_source" %}
+
+            {% set ns = namespace(cards = []) %}
+            {% for option in state_attr(options_entity, 'options') %}
+              {% if sources is not none and sources[option] is defined %}
+
+              {% if is_state(options_entity, option) %}
+                {% set style = "ha-card { 
+                    border: 3px solid white !important; 
+                    box-shadow: 0 0 15px rgba(255, 255, 255, 0.4);
+                    opacity: 1;
+                    transform: scale(1.02); 
+                    transition: all 0.3s ease-in-out;
+                    z-index: 2;
+                  }" %}
+              {% else %}
+                {% set style = "ha-card { 
+                    border: 3px solid transparent; 
+                    opacity: 0.5; 
+                    transform: scale(0.95); 
+                    filter: grayscale(20%);
+                    transition: all 0.3s ease-in-out;
+                  }" %}
+              {% endif %}
+              
+                {% set card = {
+                  "type": "picture",
+                  "image": sources[option].image,
+                  "card_mod": {
+                    "style": style
+                  },
+                  "tap_action": {
+                    "action": "perform-action",
+                    "perform_action": "input_select.select_option",
+                    "target": {
+                      "entity_id": options_entity
+                    },
+                    "data": {
+                      "option": option
+                    }
+                  }
+                } %}
+                {% set ns.cards = ns.cards + [card] %}
+              {% endif %}
+            {% endfor %}
+
+            {{ ns.cards }}
+
+      - type: iframe
+        url: /local/tv_player.html?entity=sensor.tv_stream_context
+        aspect_ratio: 16:9
+        hide_background: true
+        view_layout:
+          grid_area: video
+    card_mod:
+      style: |
+        ha-card {
+          height: 100vh !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          background: black;
+        }
