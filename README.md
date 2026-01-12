@@ -35,7 +35,7 @@ To use the dashboard card provided below, you need the following installed via *
 1.  Download `tv_player.html` and `storebælt_tv.jpg` from this repository.
 2.  Upload the files to your Home Assistant `www` folder:
     * Path: `/config/www/tv_player.html`
-    * Path: `/config/www/local/images/icons/storebælt_tv.jpg`
+    * Path: `/config/www/images/icons/storebælt_tv.jpg`
 
 ### Step 2: Create Helpers
 Add the following helpers to your `configuration.yaml` (or create them via **Settings > Devices & Services > Helpers**).
