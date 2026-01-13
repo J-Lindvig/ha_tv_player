@@ -4,6 +4,19 @@ A lightweight, robust, and fully synchronized HTML5 TV Player for **Home Assista
 
 This project implements a **"Smart Backend, Dumb Frontend"** architecture. All logic, stream URLs, and configuration reside in Home Assistant (YAML), while the HTML5 player is a generic renderer that syncs state via the Home Assistant API.
 
+## 📑 Table of Contents
+* [✨ Features](#-features)
+* [🛠️ Architecture](#-architecture)
+* [🚀 Installation & Configuration](#-installation--configuration)
+  * [Prerequisites](#prerequisites)
+  * [Step 1: Upload Frontend](#step-1-upload-frontend)
+  * [Step 2: Create Helpers](#step-2-create-helpers)
+  * [Step 3: Create The Brain (Template Sensor)](#step-3-create-the-brain-template-sensor)
+  * [Step 4: Dashboard Card](#step-4-dashboard-card)
+  * [Step 5: Physical Remote Automation](#step-5-physical-remote-automation)
+
+---
+
 ## ✨ Features
 
 * **HLS Streaming:** Native support for `.m3u8` streams via `hls.js`.
@@ -11,7 +24,7 @@ This project implements a **"Smart Backend, Dumb Frontend"** architecture. All l
 * **Full Synchronization:** Volume and Mute are 2-way synced between the UI and HA entities. If you change the volume in HA, the player updates instantly.
 * **Ghost Killer:** Automatically pauses the video stream when the dashboard card is not visible (using `IntersectionObserver`) to save bandwidth and CPU.
 * **DRY & KISS:** No hardcoded entities in the HTML/JS. Everything is defined in a single Template Sensor.
-* **Dynamic Tokens:** Fetches camera access tokens on-demand to prevent stale authentication issues.
+* **Stateless Power Logic:** Uses `browser_mod` to detect the actual page state, ensuring the physical power button always works correctly (even after manual touch navigation).
 
 ---
 
@@ -30,6 +43,7 @@ To use the dashboard card provided below, you need the following installed via *
 * [lovelace-layout-card](https://github.com/thomasloven/lovelace-layout-card)
 * [auto-entities](https://github.com/thomasloven/lovelace-auto-entities)
 * [card-mod](https://github.com/thomasloven/lovelace-card-mod)
+* [browser_mod](https://github.com/thomasloven/hass-browser_mod) (Required for navigation and automation)
 
 ### Step 1: Upload Frontend
 1. Download `tv_player.html` and `storebælt_tv.jpg` from this repository.
@@ -216,3 +230,217 @@ cards:
             {{ ns.cards }}
 
       - type: iframe
+        url: /local/tv_player.html?entity=sensor.tv_stream_context
+        aspect_ratio: 16:9
+        hide_background: true
+        view_layout:
+          grid_area: video
+    card_mod:
+      style: |
+        ha-card {
+          height: 100vh !important;
+          padding: 0 !important;
+          margin: 0 !important;
+          background: black;
+        }
+```
+
+### Step 5: Physical Remote Automation
+This automation maps a physical Zigbee/MQTT remote (like IKEA Styrbar) to the TV logic. It interacts directly with the helpers and uses `browser_mod` for smart navigation and refresh functionality.
+
+**Note:** Replace `DIN_DEVICE_ID` and `BROWSER_MOD ID` with your own IDs.
+
+```yaml
+automation:
+  - alias: TV Kiosk Remote
+    description: >-
+      Controls TV power, volume, and channels via MQTT remote. 
+      Includes "Panic Button" (Refresh) and stateless power logic.
+    mode: single
+    triggers:
+      # --- POWER ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: brightness_move_up
+        trigger: device
+        id: power_toggle
+        alias: "☀ Long Press (Power)"
+
+      # --- MUTE ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: brightness_move_down
+        trigger: device
+        id: mute
+        alias: "☼ Long Press (Mute)"
+
+      # --- VOLUME ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: "on"
+        trigger: device
+        id: volume_up
+        alias: "☀ Short Press (Vol Up)"
+      
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: "off"
+        trigger: device
+        id: volume_down
+        alias: "☼ Short Press (Vol Down)"
+
+      # --- REFRESH ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: arrow_right_hold
+        trigger: device
+        id: refresh
+        alias: "> Long Press (Refresh)"
+
+      # --- PIP ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: arrow_left_hold
+        trigger: device
+        id: pip
+        alias: "< Long Press (PiP)"
+
+      # --- CHANNELS ---
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: arrow_right_click
+        trigger: device
+        id: channel_up
+        alias: "> Short Press (Next)"
+
+      - domain: mqtt
+        device_id: DIN_DEVICE_ID  # <--- REPLACE WITH REMOTE DEVICE ID
+        type: action
+        subtype: arrow_left_click
+        trigger: device
+        id: channel_down
+        alias: "< Short Press (Prev)"
+
+    conditions: []
+    actions:
+      - choose:
+          # 1. POWER (Stateless Logic)
+          - conditions:
+              - condition: trigger
+                id: power_toggle
+            sequence:
+              - if:
+                  - condition: template
+                    value_template: >-
+                      {# Checks Browser Mod sensor: Does URL end with '0'? #}
+                      {# REMEMBER: Change 'sensor.kiosk_browser_path' to your tablet sensor #}
+                      {{ (state_attr('sensor.kiosk_browser_path', 'pathSegments') or []) | last == '0' }}
+                    alias: Is TV Off (Page 0)?
+                then:
+                  - action: browser_mod.navigate
+                    data:
+                      browser_id:
+                        - ec7c4a68ca59c058e65cf6313de20c06  # <--- REPLACE WITH YOUR BROWSER_MOD ID
+                      path: /lovelace/tv                    # <--- PATH TO TV PAGE
+                    alias: Turn ON TV
+                else:
+                  - action: browser_mod.navigate
+                    data:
+                      browser_id:
+                        - ec7c4a68ca59c058e65cf6313de20c06  # <--- REPLACE WITH YOUR BROWSER_MOD ID
+                      path: /lovelace/0                     # <--- PATH TO OFF PAGE
+                    alias: Turn OFF TV
+            alias: Power Toggle
+
+          # 2. MUTE
+          - conditions:
+              - condition: trigger
+                id: mute
+            sequence:
+              - action: input_boolean.toggle
+                target:
+                  entity_id: input_boolean.tv_stream_mute
+            alias: Mute
+
+          # 3. VOLUME
+          - conditions:
+              - condition: trigger
+                id:
+                  - volume_up
+                  - volume_down
+            sequence:
+              - action: input_number.set_value
+                target:
+                  entity_id: input_number.tv_stream_volume
+                data:
+                  value: >-
+                    {% set current = states('input_number.tv_stream_volume') | float(0) %}
+                    {% set step = 0.05 %}
+                    {% if trigger.id == 'volume_up' %}
+                      {{ [current + step, 1.0] | min }}
+                    {% else %}
+                      {{ [current - step, 0.0] | max }}
+                    {% endif %}
+              - if:
+                  - condition: trigger
+                    id: volume_up
+                  - condition: state
+                    entity_id: input_boolean.tv_stream_mute
+                    state: "on"
+                then:
+                  - action: input_boolean.turn_off
+                    target:
+                      entity_id: input_boolean.tv_stream_mute
+            alias: Volume up/down
+
+          # 4. CHANNELS
+          - conditions:
+              - condition: trigger
+                id: channel_up
+            sequence:
+              - action: input_select.select_next
+                target:
+                  entity_id: input_select.tv_stream_source
+                data:
+                  cycle: true
+            alias: Channel up
+
+          - conditions:
+              - condition: trigger
+                id: channel_down
+            sequence:
+              - action: input_select.select_previous
+                target:
+                  entity_id: input_select.tv_stream_source
+                data:
+                  cycle: true
+            alias: Channel down
+
+          # 5. REFRESH
+          - conditions:
+              - condition: trigger
+                id: refresh
+            sequence:
+              - action: browser_mod.refresh
+                data:
+                  browser_id:
+                    - ec7c4a68ca59c058e65cf6313de20c06  # <--- REPLACE WITH YOUR BROWSER_MOD ID
+            alias: Refresh
+
+          # 6. PIP
+          - conditions:
+              - condition: trigger
+                id: pip
+            sequence:
+              - action: input_boolean.toggle
+                target:
+                  entity_id: input_boolean.tv_stream_pip_manual
+            alias: PiP
+```
