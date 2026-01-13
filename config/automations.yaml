@@ -1,0 +1,190 @@
+- alias: TV Kiosk Remote
+  description: >-
+    Styrer Kiosk TV power, lydstyrke (input_number) og kanalvalg (input_select) via fysisk MQTT fjernbetjening.
+  mode: single
+  triggers:
+    # --- POWER ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID # <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: brightness_move_up
+      trigger: device
+      id: power_toggle
+      alias: "☀ Langt tryk (Power)"
+
+    # --- MUTE ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: brightness_move_down
+      trigger: device
+      id: mute
+      alias: "☼ Langt tryk (Mute)"
+
+    # --- VOLUME ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: "on"
+      trigger: device
+      id: volume_up
+      alias: "☀ Kort tryk (Vol Op)"
+    
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: "off"
+      trigger: device
+      id: volume_down
+      alias: "☼ Kort tryk (Vol Ned)"
+
+    # --- REFRESH ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: arrow_right_hold
+      trigger: device
+      id: refresh
+      alias: "> Langt tryk (Refresh)"
+
+    # --- PIP ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: arrow_left_hold
+      trigger: device
+      id: pip
+      alias: "< Langt tryk (PiP)"
+
+    # --- KANALER ---
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: arrow_right_click
+      trigger: device
+      id: channel_up
+      alias: "> Kort tryk (Næste)"
+
+    - domain: mqtt
+      device_id: DIN_DEVICE_ID# <--- RET TIL DIN FJERNBETJENINGS DEVICE ID
+      type: action
+      subtype: arrow_left_click
+      trigger: device
+      id: channel_down
+      alias: "< Kort tryk (Forrige)"
+
+  conditions: []
+  actions:
+    - choose:
+        # 1. POWER
+        - conditions:
+            - condition: trigger
+              id: power_toggle
+          sequence:
+            - if:
+                - condition: template
+                  value_template: >-
+                    {# Tjekker Browser Mod sensoren: Slutter URL'en på '0'? (Din forside) #}
+                    {# HUSK: Ret 'sensor.kiosk_browser_path' til din egen tablets sensor #}
+                    {{ (state_attr('sensor.kiosk_browser_path', 'pathSegments') or []) | last == '0' }}
+                  alias: Er TV slukket?
+              then:
+                - action: browser_mod.navigate
+                  data:
+                    browser_id:
+                      - ec7c4a68ca59c058e65cf6313de20c06  # <--- RET TIL DIT BROWSER_MOD ID
+                    path: /lovelace/tv                    # <--- RET TIL STIEN PÅ DIN TV-SIDE
+                  alias: Tænd TV
+              else:
+                - action: browser_mod.navigate
+                  data:
+                    browser_id:
+                      - ec7c4a68ca59c058e65cf6313de20c06  # <--- RET TIL DIT BROWSER_MOD ID
+                    path: /lovelace/0                     # <--- RET TIL STIEN PÅ DIN FORSIDE
+                  alias: Sluk TV
+          alias: Power Toggle
+
+        # 2. MUTE
+        - conditions:
+            - condition: trigger
+              id: mute
+          sequence:
+            - action: input_boolean.toggle
+              target:
+                entity_id: input_boolean.tv_stream_mute
+          alias: Mute
+
+        # 3. VOLUME
+        - conditions:
+            - condition: trigger
+              id:
+                - volume_up
+                - volume_down
+          sequence:
+            - action: input_number.set_value
+              target:
+                entity_id: input_number.tv_stream_volume
+              data:
+                value: >-
+                  {% set current = states('input_number.tv_stream_volume') | float(0) %}
+                  {% set step = 0.05 %}
+                  {% if trigger.id == 'volume_up' %}
+                    {{ [current + step, 1.0] | min }}
+                  {% else %}
+                    {{ [current - step, 0.0] | max }}
+                  {% endif %}
+            - if:
+                - condition: trigger
+                  id: volume_up
+                - condition: state
+                  entity_id: input_boolean.tv_stream_mute
+                  state: "on"
+              then:
+                - action: input_boolean.turn_off
+                  target:
+                    entity_id: input_boolean.tv_stream_mute
+          alias: Volume up/down
+
+        # 4. KANALER
+        - conditions:
+            - condition: trigger
+              id: channel_up
+          sequence:
+            - action: input_select.select_next
+              target:
+                entity_id: input_select.tv_stream_source
+              data:
+                cycle: true
+          alias: Channel up
+
+        - conditions:
+            - condition: trigger
+              id: channel_down
+          sequence:
+            - action: input_select.select_previous
+              target:
+                entity_id: input_select.tv_stream_source
+              data:
+                cycle: true
+          alias: Channel down
+
+        # 5. REFRESH
+        - conditions:
+            - condition: trigger
+              id: refresh
+          sequence:
+            - action: browser_mod.refresh
+              data:
+                browser_id:
+                  - ec7c4a68ca59c058e65cf6313de20c06
+          alias: Refresh
+
+        # 6. PIP
+        - conditions:
+            - condition: trigger
+              id: pip
+          sequence:
+            - action: input_boolean.toggle
+              target:
+                entity_id: input_boolean.tv_stream_pip_manual
+          alias: PiP
