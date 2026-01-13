@@ -6,7 +6,7 @@ This project implements a **"Smart Backend, Dumb Frontend"** architecture. All l
 
 ## 📑 Table of Contents
 * [✨ Features](#-features)
-* [🛠️ Architecture](#-architecture)
+* [🛠️ Architecture](#%EF%B8%8F-architecture)
 * [🚀 Installation & Configuration](#-installation--configuration)
   * [Prerequisites](#prerequisites)
   * [Step 1: Upload Frontend](#step-1-upload-frontend)
