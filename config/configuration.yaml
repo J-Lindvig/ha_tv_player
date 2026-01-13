@@ -3,6 +3,10 @@ input_boolean:
     name: TV Stream Mute
     icon: mdi:volume-mute
 
+  tv_stream_pip_manual:
+    name: TV Stream PiP Manual
+    icon: mdi:picture-in-picture-top-right
+
 input_number:
   tv_stream_volume:
     name: TV Stream Volume
@@ -30,6 +34,7 @@ template:
           - input_select.tv_stream_source
           - input_number.tv_stream_volume
           - input_boolean.tv_stream_mute
+          - input_boolean.tv_stream_pip_manual
           - binary_sensor.carport_object
       - trigger: homeassistant
         event: start
@@ -69,6 +74,7 @@ template:
             } %}
             {{ map }}
           stream_url: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
+          stream_image: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'image': ''}).image }}"
           stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
           stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
-          pip_active: "{{ is_state('binary_sensor.carport_object', 'on') }}"
+          pip_active: "{{ is_state('binary_sensor.carport_object', 'on') or is_state('input_boolean.tv_stream_pip_manual', 'on') }}"
