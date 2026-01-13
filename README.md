@@ -17,9 +17,9 @@ This project implements a **"Smart Backend, Dumb Frontend"** architecture. All l
 
 ## 🛠️ Architecture
 
-1.  **Helpers:** Store the state (Channel, Volume, Mute).
-2.  **Template Sensor (The Brain):** Maps channels to URLs, handles logic, and tells the player *which* entities to control.
-3.  **Frontend (The Face):** A generic `tv_player.html` file served via `iframe`.
+1. **Helpers:** Store the state (Channel, Volume, Mute).
+2. **Template Sensor (The Brain):** Maps channels to URLs, handles logic, and tells the player *which* entities to control.
+3. **Frontend (The Face):** A generic `tv_player.html` file served via `iframe`.
 
 ---
 
@@ -32,8 +32,8 @@ To use the dashboard card provided below, you need the following installed via *
 * [card-mod](https://github.com/thomasloven/lovelace-card-mod)
 
 ### Step 1: Upload Frontend
-1.  Download `tv_player.html` and `storebælt_tv.jpg` from this repository.
-2.  Upload the files to your Home Assistant `www` folder:
+1. Download `tv_player.html` and `storebælt_tv.jpg` from this repository.
+2. Upload the files to your Home Assistant `www` folder:
     * `/config/www/tv_player.html`
     * `/config/www/images/icons/storebælt_tv.jpg`
 
@@ -49,6 +49,9 @@ input_boolean:
   tv_stream_mute:
     name: TV Stream Mute
     icon: mdi:volume-mute
+  tv_stream_pip_manual:
+    name: TV PiP Manual
+    icon: mdi:cctv
 
 input_number:
   tv_stream_volume:
@@ -69,6 +72,15 @@ input_select:
       - Ramasjang
       - Storebælt
     icon: mdi:television
+```
+
+### Step 3: Create The Brain (Template Sensor)
+This sensor is the heart of the system. It maps the selected source to a URL and exposes the configuration to the frontend.
+
+Add this to your `configuration.yaml` (or `template.yaml`):
+
+```yaml
+# configuration.yaml
 
 template:
   - triggers:
@@ -78,6 +90,7 @@ template:
           - input_number.tv_stream_volume
           - input_boolean.tv_stream_mute
           - binary_sensor.carport_object
+          - input_boolean.tv_stream_pip_manual
       - trigger: homeassistant
         event: start
       - trigger: event
@@ -91,38 +104,42 @@ template:
           config_entity_mute: "input_boolean.tv_stream_mute"
           config_entity_camera: "camera.carport_fluent_lens_1"
           sources: >
-            {% set base_url = "https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=" %}
+            {% set base_url = "[https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=](https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=)" %}
             {% set map = {
               "DR 1": {
                 "image": base_url ~ 2344192,
-                "url": "https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8"
+                "url": "[https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8](https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8)"
               },
               "DR 2": {
                 "image": base_url ~ 46461911,
-                "url": "https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8"
+                "url": "[https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8](https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8)"
               },
               "TVA": {
                 "image": base_url ~ 16100144,
-                "url": "https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8"
+                "url": "[https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8](https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8)"
               },
               "Ramasjang": {
                 "image": base_url ~ 2399380,
-                "url": "https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8"
+                "url": "[https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8](https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8)"
               },
               "Storebælt": {
                 "image": "/local/images/icons/storebælt_tv.jpg",
-                "url": "https://stream.sob.m-dn.net/live/sb1/index.m3u8"
+                "url": "[https://stream.sob.m-dn.net/live/sb1/index.m3u8](https://stream.sob.m-dn.net/live/sb1/index.m3u8)"
               }
             } %}
             {{ map }}
           stream_url: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
+          stream_image: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'image': ''}).image }}"
           stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
           stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
-          pip_active: "{{ is_state('binary_sensor.carport_object', 'on') }}"
+          # PiP Logic: Active if motion sensor is ON OR Manual Override is ON
+          pip_active: >-
+            {{ is_state('binary_sensor.carport_object', 'on') 
+               or is_state('input_boolean.tv_stream_pip_manual', 'on') }}
 ```
 
 ### Step 4: Dashboard Card
-Add the player to your Lovelace dashboard using a standard Webpage (Iframe) card.
+Add the player to your Lovelace dashboard. This configuration creates a sidebar with channel selection and the main video player.
 
 ```yaml
 type: panel
@@ -199,18 +216,3 @@ cards:
             {{ ns.cards }}
 
       - type: iframe
-        url: /local/tv_player.html?entity=sensor.tv_stream_context
-        aspect_ratio: 16:9
-        hide_background: true
-        view_layout:
-          grid_area: video
-    card_mod:
-      style: |
-        ha-card {
-          height: 100vh !important;
-          padding: 0 !important;
-          margin: 0 !important;
-          background: black;
-        }
-
-```
