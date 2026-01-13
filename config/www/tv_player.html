@@ -188,14 +188,15 @@
                 
                 logoEl.src = currentLogoUrl;
 
-                logoEl.classList.add('visible');
+                if (document.fullscreenElement) {
+                    logoEl.classList.add('visible');
 
-                clearTimeout(logoTimeout);
-                logoTimeout = setTimeout(() => {
-                    logoEl.classList.remove('visible');
-                }, 4000); 
+                    clearTimeout(logoTimeout);
+                    logoTimeout = setTimeout(() => {
+                        logoEl.classList.remove('visible');
+                    }, 4000); 
+                }
             }
-
 
             // C. VOLUME
             if (attrs.stream_volume !== undefined) {
