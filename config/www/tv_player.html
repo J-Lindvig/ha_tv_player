@@ -28,6 +28,17 @@
         }
         #ui-layer.visible { opacity: 1; }
 
+        /* OSD Kanal Logo */
+        #channel-logo {
+            position: absolute; top: 40px; left: 40px; height: 80px; width: auto;
+            opacity: 0; transition: opacity 0.5s ease; z-index: 25;
+            filter: drop-shadow(0 0 5px rgba(0,0,0,0.8));
+            pointer-events: none;
+        }
+        #channel-logo.visible {
+            opacity: 1;
+        }
+
         /* Volume Slider */
         input[type=range] {
             -webkit-appearance: none; flex: 1; max-width: 200px; min-width: 80px; height: 6px;
@@ -53,6 +64,8 @@
     <div id="pip-overlay" onclick="togglePiP()">
         <img id="pip-img" alt="Camera Stream" />
     </div>
+
+    <img id="channel-logo" src="" alt="Kanal Logo" />
 
     <div id="ui-layer">
         <button id="mute-btn" class="icon-btn" onclick="toggleMute()">
@@ -87,13 +100,13 @@
         // Stop alt hvis vi mangler adgang
         if (!HA_TOKEN) {
             document.body.innerHTML = "<h1 style='color:white; pading: 20px;'>Mangler Token - Log ind i HA</h1>";
-            throw new Error("Authentication failed: No token found");
+            throw new Error("Authentication failed: No token found"); // Stopper scriptet her!
         }
 
         // =====================================================================
         // 2. GLOBALE VARIABLER
         // =====================================================================
-        // Entry Point med FALLBACK entitet
+        // Entry Point
         const PLAYER_ENTITY = urlParams.get('entity') || "sensor.tv_stream_context";
 
         // Dynamiske Variabler
@@ -110,6 +123,8 @@
         // Player State
         let hls = null;
         let currentUrl = "";
+        let currentLogoUrl = "";
+        let logoTimeout;
         let uiTimeout;
 
         // =====================================================================
@@ -160,12 +175,27 @@
                 ENTITY_MUTE = attrs.config_entity_mute;
             }
 
-            // B. STREAM
+            // B. STREAM og LOGO
             const stream_url = attrs.stream_url;
             if (stream_url && stream_url !== currentUrl) {
                 console.log("Skifter kanal til:", stream_url);
                 playStream(stream_url);
             }
+
+            if (attrs.stream_image && attrs.stream_image !== currentLogoUrl) {
+                currentLogoUrl = attrs.stream_image;
+                const logoEl = document.getElementById('channel-logo');
+                
+                logoEl.src = currentLogoUrl;
+
+                logoEl.classList.add('visible');
+
+                clearTimeout(logoTimeout);
+                logoTimeout = setTimeout(() => {
+                    logoEl.classList.remove('visible');
+                }, 4000); 
+            }
+
 
             // C. VOLUME
             if (attrs.stream_volume !== undefined) {
@@ -173,6 +203,7 @@
                 if (Math.abs(video.volume - remoteVol) > 0.01) {
                     video.volume = remoteVol;
                     volSlider.value = remoteVol;
+                    showUI();
                 }
             }
 
@@ -182,6 +213,7 @@
                 if (video.muted !== remoteMute) {
                     video.muted = remoteMute;
                     updateMuteIcon();
+                    showUI();
                 }
             }
 
@@ -294,7 +326,7 @@
         }
 
         // Display Control
-        function toggleFullscreen() {
+        async function toggleFullscreen() {
             if (!document.fullscreenElement) {
                 document.documentElement.requestFullscreen().catch(e => console.log(e));
             } else {
