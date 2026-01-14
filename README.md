@@ -4,6 +4,8 @@ A lightweight, robust, and fully synchronized HTML5 TV Player for **Home Assista
 
 This project implements a **"Smart Backend, Dumb Frontend"** architecture. All logic, stream URLs, and configuration reside in Home Assistant (YAML), while the HTML5 player is a generic renderer that syncs state via the Home Assistant API.
 
+> ⚡ **Quick Start:** Want the "barebones" version? Check out [minimum](minimum.md) for a minimal installation guide.
+
 ## 📑 Table of Contents
 * [✨ Features](#-features)
 * [🛠️ Architecture](#%EF%B8%8F-architecture)
