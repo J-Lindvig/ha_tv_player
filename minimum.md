@@ -1,4 +1,4 @@
-## ⚡ Quick Start (Minimal Install)
+## ⚡ Quick Start (Minimal Install), - Volume, - Mute, - PiP
 
 Få liv i systemet på 3 minutter med kun 3 trin.
 
