@@ -1,158 +1,216 @@
 <!DOCTYPE html>
 <html>
-<head>
-    <meta charset="utf-8">
-    <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
-    <meta http-equiv="Pragma" content="no-cache">
-    <meta http-equiv="Expires" content="0">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-    <title>HA TV Player</title>
-    <style>
-        body { margin: 0; background: #000; overflow: hidden; font-family: sans-serif; }
-        video { width: 100vw; height: 100vh; object-fit: contain; }
+    <head>
+        <meta charset="utf-8" />
+        <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate" />
+        <meta http-equiv="Pragma" content="no-cache" />
+        <meta http-equiv="Expires" content="0" />
+        <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+        <title>HA TV Player</title>
+        <style>
+            body {
+                margin: 0; background: #000; overflow: hidden; font-family: sans-serif;
+            }
+            video {
+                width: 100vw; height: 100vh; object-fit: contain;
+            }
 
-        /* PiP Vinduet (Skjult som standard) */
-        #pip-overlay {
-            position: absolute; top: 20px; right: 20px; width: 320px; aspect-ratio: 16/9;
-            background: black; border: 2px solid white; box-shadow: 0 0 20px rgba(0,0,0,0.8);
-            z-index: 10; display: none; border-radius: 8px; overflow: hidden; cursor: pointer;
-        }
-        #pip-overlay img { width: 100%; height: 100%; object-fit: cover; }
+            /* PiP Window (Hidden by default) */
+            #pip-overlay {
+                position: absolute; top: 20px; right: 20px; width: 320px; aspect-ratio: 16/9; z-index: 10;
+                background: black; border: 2px solid white; border-radius: 8px; box-shadow: 0 0 20px rgba(0, 0, 0, 0.8);
+                display: none; overflow: hidden; cursor: pointer;
+            }
+            #pip-overlay.active { display: block; }
 
-        /* UI Bundbar */
-        #ui-layer {
-            position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; 
-            background: linear-gradient(to top, rgba(0,0,0,0.9), transparent);
-            display: flex; align-items: center; padding: 0 20px; box-sizing: border-box;
-            opacity: 0; transition: opacity 0.5s ease; z-index: 20;
-        }
-        #ui-layer.visible { opacity: 1; }
+            #pip-overlay img { width: 100%; height: 100%; object-fit: cover; }
 
-        /* OSD Kanal Logo */
-        #channel-logo {
-            position: absolute; top: 40px; left: 40px; height: 80px; width: auto;
-            opacity: 0; transition: opacity 0.5s ease; z-index: 25;
-            filter: drop-shadow(0 0 5px rgba(0,0,0,0.8));
-            pointer-events: none;
-        }
-        #channel-logo.visible {
-            opacity: 1;
-        }
+            /* UI Bottom Bar */
+            #ui-layer {
+                position: absolute; bottom: 0; left: 0; width: 100%; height: 80px; z-index: 20;
+                display: flex; align-items: center; padding: 0 20px; box-sizing: border-box;
+                background: linear-gradient(to top, rgba(0, 0, 0, 0.9), transparent);
+                opacity: 0; transition: opacity 0.5s ease;
+            }
+            #ui-layer.visible { opacity: 1; }
 
-        /* Volume Slider */
-        input[type=range] {
-            -webkit-appearance: none; flex: 1; max-width: 200px; min-width: 80px; height: 6px;
-            background: rgba(255,255,255,0.3); border-radius: 3px; outline: none; margin: 0 15px;
-        }
-        input[type=range]::-webkit-slider-thumb {
-            -webkit-appearance: none; appearance: none; width: 20px; height: 20px;
-            border-radius: 50%; background: #a83232; cursor: pointer; box-shadow: 0 0 10px rgba(0,0,0,0.5);
-        }
+            /* OSD Channel Logo */
+            #channel-logo {
+                position: absolute; top: 40px; left: 40px; z-index: 25;
+                height: 80px; width: auto; pointer-events: none;
+                opacity: 0; filter: drop-shadow(0 0 5px rgba(0, 0, 0, 0.8)); transition: opacity 0.5s ease;
+            }
+            #channel-logo.visible { opacity: 1; }
 
-        /* Knapper */
-        .icon-btn {
-            background: none; border: none; cursor: pointer; padding: 0; width: 32px; height: 32px;
-            fill: white; display: flex; align-items: center; justify-content: center; flex-shrink: 0;
-        }
-        #fs-btn { margin-left: auto; }
-    </style>
-    <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
-</head>
-<body>
-    <video id="video" autoplay playsinline ondblclick="toggleFullscreen()"></video>
+            /* Volume Slider */
+            input[type="range"] {
+                -webkit-appearance: none; outline: none; flex: 1; margin: 0 15px;
+                max-width: 200px; min-width: 80px; height: 6px; border-radius: 3px; background: rgba(255, 255, 255, 0.3);
+            }
+            input[type="range"]::-webkit-slider-thumb {
+                -webkit-appearance: none; appearance: none; width: 20px; height: 20px; cursor: pointer;
+                border-radius: 50%; background: #a83232; box-shadow: 0 0 10px rgba(0, 0, 0, 0.5);
+            }
 
-    <div id="pip-overlay" onclick="togglePiP()">
-        <img id="pip-img" alt="Camera Stream" />
-    </div>
+            /* Buttons */
+            .icon-btn {
+                background: none; border: none; padding: 0; cursor: pointer;
+                width: 32px; height: 32px; fill: white; flex-shrink: 0;
+                display: flex; align-items: center; justify-content: center;
+            }
+            #fs-btn { margin-left: auto; }
+        </style>
+        <script src="https://cdn.jsdelivr.net/npm/hls.js@latest"></script>
+    </head>
+    <body>
+        <video id="video" autoplay playsinline ondblclick="toggleFullscreen()"></video>
 
-    <img id="channel-logo" src="" alt="Kanal Logo" />
+        <div id="pip-overlay" onclick="togglePiP()"><img id="pip-img" alt="Camera Stream" /></div>
 
-    <div id="ui-layer">
-        <button id="mute-btn" class="icon-btn" onclick="toggleMute()">
-            <svg viewBox="0 0 24 24" width="28" height="28"><path id="mute-icon-path" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z" /></svg>
-        </button>
-        <input type="range" id="vol-control" min="0" max="1" step="0.05" oninput="setVolume(this.value)" onchange="sendVolumeToHA(this.value)">
-        <button id="fs-btn" class="icon-btn" onclick="toggleFullscreen()">
-            <svg viewBox="0 0 24 24" width="28" height="28"><path id="fs-icon-path" d="M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z" /></svg>
-        </button>
-    </div>
+        <img id="channel-logo" src="" alt="Kanal Logo" />
+
+        <div id="ui-layer">
+            <button id="mute-btn" class="icon-btn" onclick="toggleMute()">
+                <svg viewBox="0 0 24 24" width="28" height="28">
+                    <path id="mute-icon-path" d="M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z" />
+                </svg>
+            </button>
+            <input type="range" id="vol-control" min="0" max="1" step="0.05" oninput="setVolume(this.value)" onchange="sendVolumeToHA(this.value)" />
+            <button id="fs-btn" class="icon-btn" onclick="toggleFullscreen()">
+                <svg viewBox="0 0 24 24" width="28" height="28">
+                    <path id="fs-icon-path" d="M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z" />
+                </svg>
+            </button>
+        </div>
 
     <script>
         // =====================================================================
-        // 1. INIT & SIKKERHED (Fail Fast)
+        // 1. INIT & SECURITY (Fail Fast)
         // =====================================================================
         const urlParams = new URLSearchParams(window.location.search);
         const HA_URL = window.location.origin;
-        
-        // Helper defineres først, så den kan bruges straks
+
+        // Helper defined first for immediate use
         function getAuthToken() {
-            if (urlParams.get('token')) return urlParams.get('token');
+            if (urlParams.get("token")) return urlParams.get("token");
+
             try {
-                const rawTokens = window.parent.localStorage.getItem('hassTokens');
+                const rawTokens = window.parent.localStorage.getItem("hassTokens");
                 if (rawTokens) return JSON.parse(rawTokens).access_token;
-            } catch (e) { console.warn("Kunne ikke hente token:", e); }
+            } catch (e) {
+                console.warn("Could not retrieve token:", e);
+            }
             return null;
         }
 
-        // Hent tokenet NU - og brug const da det er en konstant for denne session
+        // Get the token NOW - use const as it remains constant for this session
         const HA_TOKEN = getAuthToken();
 
-        // Stop alt hvis vi mangler adgang
+        // Stop everything if access is missing
         if (!HA_TOKEN) {
-            document.body.innerHTML = "<h1 style='color:white; pading: 20px;'>Mangler Token - Log ind i HA</h1>";
-            throw new Error("Authentication failed: No token found"); // Stopper scriptet her!
+            document.body.innerHTML = "<h1 style='color:white; pading: 20px;'>HA TOKEN MISSING</h1>";
+            throw new Error("Authentication failed: No token found");
         }
 
         // =====================================================================
-        // 2. GLOBALE VARIABLER
+        // 2. GLOBAL VARIABLES
         // =====================================================================
         // Entry Point
-        const PLAYER_ENTITY = urlParams.get('entity') || "sensor.tv_stream_context";
+        const PLAYER_ENTITY = urlParams.get("entity");
 
-        // Dynamiske Variabler
-        let ENTITY_CAMERA = ""; 
-        let ENTITY_VOLUME = "";
+        // Dynamic Variables
+        let ENTITY_CAMERA = "";
         let ENTITY_MUTE = "";
+        let ENTITY_VOLUME = "";
 
-        // UI Elementer (Disse er const, da referencen til elementet ikke ændres)
-        const video = document.getElementById('video');
-        const volSlider = document.getElementById('vol-control');
-        const muteIconPath = document.getElementById('mute-icon-path');
-        const uiLayer = document.getElementById('ui-layer');
+        // UI Elements (These are const as the element reference does not change)
+        const fsIconPath = document.getElementById("fs-icon-path");
+        const logoEl = document.getElementById("channel-logo");
+        const muteIconPath = document.getElementById("mute-icon-path");
+        const pipImage = document.getElementById("pip-img");
+        const pipOverlay = document.getElementById("pip-overlay");
+        const uiLayer = document.getElementById("ui-layer");
+        const video = document.getElementById("video");
+        const volSlider = document.getElementById("vol-control");
 
         // Player State
-        let hls = null;
         let currentUrl = "";
         let currentLogoUrl = "";
+        let hls = null;
         let logoTimeout;
         let uiTimeout;
 
         // =====================================================================
         // 3. API HELPERS
         // =====================================================================
+
+        /**
+         * Checks if the Home Assistant auth token is present.
+         * Returns true if valid, otherwise logs error and returns false.
+         */
+        function isTokenValid() {
+            if (!HA_TOKEN) {
+                console.error("Auth Error: Missing HA_TOKEN.");
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Validates that all passed arguments are truthy (not null/undefined/empty).
+         * Used to prevent API calls with missing parameters.
+         * @param {...any} args - Variable number of arguments to check.
+         */
+        function areArgsValid(...args) {
+            if (args.some((arg) => !arg)) {
+                console.error(
+                "System Error: One or more required arguments are missing."
+                );
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Fetches the current state object of a specific entity from HA.
+         * Returns the JSON object or null on failure.
+         */
         async function fetchState(entityId) {
-            if (!HA_TOKEN || !entityId) return null;
+            // Guards: Ensure we have token and entityId
+            if (!isTokenValid()) return;
+            if (!areArgsValid(entityId)) return;
+
             try {
                 const response = await fetch(`${HA_URL}/api/states/${entityId}`, {
-                    headers: { 
-                        "Authorization": `Bearer ${HA_TOKEN}`, 
-                        "Content-Type": "application/json" 
-                    }
+                headers: {
+                    Authorization: `Bearer ${HA_TOKEN}`,
+                    "Content-Type": "application/json",
+                },
                 });
                 if (!response.ok) return null;
                 return await response.json();
             } catch (e) {
-                console.error(`Fejl ved hentning af ${entityId}:`, e);
+                console.error(`Error fetching ${entityId}:`, e);
                 return null;
             }
         }
 
-        async function callService(domain, service, data) {
-            if (!HA_TOKEN) return;
+        /**
+         * Calls a Home Assistant service (e.g., input_boolean.turn_on).
+         * Fire-and-forget (does not return the response).
+         */
+        async function callService(domain, service, data = {}) {
+            // Guards: Ensure we have token, domain, and service
+            if (!isTokenValid()) return;
+            if (!areArgsValid(domain, service)) return;
+
             await fetch(`${HA_URL}/api/services/${domain}/${service}`, {
                 method: "POST",
-                headers: { "Authorization": `Bearer ${HA_TOKEN}`, "Content-Type": "application/json" },
-                body: JSON.stringify(data)
+                headers: {
+                Authorization: `Bearer ${HA_TOKEN}`,
+                "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
             });
         }
 
@@ -161,46 +219,58 @@
         // =====================================================================
         async function syncLoop() {
             const data = await fetchState(PLAYER_ENTITY);
-            if (!data) return;
+            if (!data) {
+                console.error("No data received.");
+                return;
+            }
+
             const attrs = data.attributes;
 
-            // A. CONFIG (Optimering: Assign kun ved ændring)
+            // A. CONFIG (Optimization: Assign only on change)
             if (attrs.config_entity_camera && ENTITY_CAMERA !== attrs.config_entity_camera) {
                 ENTITY_CAMERA = attrs.config_entity_camera;
-            }
-            if (attrs.config_entity_volume && ENTITY_VOLUME !== attrs.config_entity_volume) {
-                ENTITY_VOLUME = attrs.config_entity_volume;
             }
             if (attrs.config_entity_mute && ENTITY_MUTE !== attrs.config_entity_mute) {
                 ENTITY_MUTE = attrs.config_entity_mute;
             }
-
-            // B. STREAM og LOGO
-            const stream_url = attrs.stream_url;
-            if (stream_url && stream_url !== currentUrl) {
-                console.log("Skifter kanal til:", stream_url);
-                playStream(stream_url);
+            if (attrs.config_entity_volume && ENTITY_VOLUME !== attrs.config_entity_volume) {
+                ENTITY_VOLUME = attrs.config_entity_volume;
             }
 
-            if (attrs.stream_image && attrs.stream_image !== currentLogoUrl) {
-                currentLogoUrl = attrs.stream_image;
-                const logoEl = document.getElementById('channel-logo');
-                
-                logoEl.src = currentLogoUrl;
+            // B. STREAM AND LOGO
+            const newStreamUrl = attrs.stream_url;
+            const newLogoUrl = attrs.stream_image;
 
-                if (document.fullscreenElement) {
-                    logoEl.classList.add('visible');
+            // Handle Stream Change
+            if (newStreamUrl && newStreamUrl !== currentUrl) {
+                console.log("Switching channel to:", newStreamUrl);
+                playStream(newStreamUrl);
+            }
 
-                    clearTimeout(logoTimeout);
-                    logoTimeout = setTimeout(() => {
-                        logoEl.classList.remove('visible');
-                    }, 4000); 
+            // Handle Logo Change
+            if (newLogoUrl && newLogoUrl !== currentLogoUrl) {
+                currentLogoUrl = newLogoUrl;
+
+                if (logoEl) {
+                    // Update source immediately
+                    logoEl.src = currentLogoUrl;
+
+                    // Only flash logo if in fullscreen mode
+                    if (document.fullscreenElement) {
+                        logoEl.classList.add("visible");
+
+                        clearTimeout(logoTimeout);
+                        logoTimeout = setTimeout(() => {
+                            logoEl.classList.remove("visible");
+                        }, 4000);
+                    }
                 }
             }
 
             // C. VOLUME
             if (attrs.stream_volume !== undefined) {
                 const remoteVol = parseFloat(attrs.stream_volume);
+                // Check difference > 0.01 to avoid infinite loops due to float precision
                 if (Math.abs(video.volume - remoteVol) > 0.01) {
                     video.volume = remoteVol;
                     volSlider.value = remoteVol;
@@ -210,7 +280,7 @@
 
             // D. MUTE
             if (attrs.stream_mute !== undefined) {
-                const remoteMute = (attrs.stream_mute === true);
+                const remoteMute = attrs.stream_mute === true;
                 if (video.muted !== remoteMute) {
                     video.muted = remoteMute;
                     updateMuteIcon();
@@ -218,12 +288,14 @@
                 }
             }
 
-            // E. PIP (Reaktiv)
+            // E. PIP (Reactive State)
             if (attrs.pip_active !== undefined) {
-                const pipActive = (attrs.pip_active === true);
-                const pipOn = (document.getElementById('pip-overlay').style.display === 'block');
+                const pipActive = attrs.pip_active === true;
+                // Check actual DOM state (block/none) vs requested state
+                const pipOn = pipOverlay.classList.contains("active");
+
                 if (pipActive !== pipOn) {
-                    togglePiP(); 
+                    togglePiP();
                 }
             }
         }
@@ -231,147 +303,233 @@
         // =====================================================================
         // 5. FEATURES (PIP & STREAM)
         // =====================================================================
+
+        /**
+         * Toggles Picture-in-Picture mode.
+         * Fetches a fresh token for the camera if turning on.
+         */
         async function togglePiP() {
-            const pip = document.getElementById('pip-overlay');
-            const img = document.getElementById('pip-img');
+            // Guard: Ensure UI elements exist
+            if (!pipOverlay || !pipImage) return;
 
-            if (pip.style.display === 'block') {
-                pip.style.display = 'none';
-                img.src = "";
+            if (pipOverlay.classList.contains("active")) {
+                // --- ACTION: TURN OFF ---
+                pipOverlay.classList.remove("active");
+                pipImage.src = "";
             } else {
-                if (!ENTITY_CAMERA) return console.error("Kamera Entity ID mangler (venter på sync...)");
+                // --- ACTION: TURN ON ---
+                if (!ENTITY_CAMERA) {
+                    console.error("System Error: ENTITY_CAMERA is missing (wait for sync).");
+                    return;
+                }
 
-                const camState = await fetchState(ENTITY_CAMERA);
-                if (camState && camState.attributes.access_token) {
-                    const token = camState.attributes.access_token;
-                    img.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${token}&time=${Date.now()}`;
-                    pip.style.display = 'block';
-                } else {
-                    console.error("Kunne ikke hente kamera token");
+                try {
+                    // 1. Get fresh token
+                    const camState = await fetchState(ENTITY_CAMERA);
+
+                    if (camState && camState.attributes.access_token) {
+                        const camToken = camState.attributes.access_token;
+
+                        // 2. Build URL and Update UI immediately
+                        // Adding Date.now() prevents browser caching of the stream
+                        pipImage.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${camToken}&time=${Date.now()}`;
+                        pipOverlay.classList.add("active");
+                    } else {
+                        console.error("System Error: Could not retrieve access_token.");
+                    }
+                } catch (error) {
+                    console.error("PiP Error:", error);
                 }
             }
         }
 
+        /**
+         * Loads and plays a video stream from a URL.
+         * Handles both HLS.js (mostly PC/Android) and Native HLS (Apple).
+         */
         function playStream(url) {
+            if (!areArgsValid(url)) return;
+
+            // Always clean up previous stream before starting a new one
             stopStream();
             currentUrl = url;
 
             if (Hls.isSupported()) {
+                // Initialize HLS.js with low-latency settings
                 hls = new Hls({
                     enableWorker: true,
                     lowLatencyMode: true,
-                    backBufferLength: 90
+                    backBufferLength: 90,
                 });
 
                 hls.loadSource(url);
                 hls.attachMedia(video);
-                    
-                hls.on(Hls.Events.MANIFEST_PARSED, function() {
-                    console.log("Manifest loaded, klar til afspilning");
+
+                hls.on(Hls.Events.MANIFEST_PARSED, function () {
+                    console.log("Manifest loaded, ready to play");
                 });
-            } else if (video.canPlayType('application/vnd.apple.mpegurl')) {
+            } else if (video.canPlayType("application/vnd.apple.mpegurl")) {
+                // Fallback for Safari (Native HLS support)
                 video.src = url;
             }
         }
 
+        /**
+         * Stops the video and destroys the HLS instance to free up memory.
+         */
         function stopStream() {
             if (hls) {
                 hls.destroy();
                 hls = null;
             }
             video.pause();
-            video.removeAttribute('src');
+            video.removeAttribute("src"); // crucial for complete stop
             video.load();
             currentUrl = "";
         }
 
         // =====================================================================
-        // 5. UI INTERACTIONS
+        // 6. UI INTERACTIONS
         // =====================================================================
-        // Volume Control
+
+        // --- Volume Control ---
+        /**
+         * Sets the volume locally on the video element.
+         * Automatically unmutes if volume is raised above 0.
+         */
         function setVolume(val) {
+            if (!areArgsValid(val)) return;
+
             video.volume = val;
             if (val > 0 && video.muted) {
-                video.muted = false; 
+                video.muted = false;
                 updateMuteIcon();
             }
         }
 
+        /**
+         * Syncs the volume level back to Home Assistant.
+         */
         async function sendVolumeToHA(val) {
-            if (!ENTITY_VOLUME) return;
+            if (!ENTITY_VOLUME || !areArgsValid(val)) return;
+
             try {
-                await callService("input_number", "set_value", { entity_id: ENTITY_VOLUME, value: parseFloat(val) });
-                
-                if (val > 0 && video.muted) { 
-                    await callService("input_boolean", "turn_off", { entity_id: ENTITY_MUTE });
+                await callService("input_number", "set_value", {
+                    entity_id: ENTITY_VOLUME,
+                    value: parseFloat(val),
+                });
+
+                // If volume is raised, ensure HA knows mute is off
+                if (val > 0 && video.muted) {
+                    await callService("input_boolean", "turn_off", {
+                        entity_id: ENTITY_MUTE,
+                    });
                 }
-            } catch (e) { console.error("Fejl ved volume upload:", e); }
-        }
-
-        // Mute Control
-        async function toggleMute() {
-            video.muted = !video.muted;
-            updateMuteIcon();
-            if (!ENTITY_MUTE) return;
-            try {
-                await callService("input_boolean", "turn_" + (video.muted ? "on" : "off"), { entity_id: ENTITY_MUTE });
-            } catch (e) { console.error("Fejl ved mute upload:", e); }
-        }
-
-        function updateMuteIcon() {
-            if (video.muted || video.volume === 0) {
-                muteIconPath.setAttribute('d', 'M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.48,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z');
-            } else {
-                muteIconPath.setAttribute('d', 'M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z');
+            } catch (e) {
+                console.error("Error uploading volume:", e);
             }
         }
 
-        // Display Control
+        // --- Mute Control ---
+        /**
+         * Toggles mute locally and syncs the state to Home Assistant.
+         */
+        async function toggleMute() {
+            video.muted = !video.muted;
+            updateMuteIcon();
+
+            if (!ENTITY_MUTE) return;
+            try {
+                // Dynamically call turn_on or turn_off based on new state
+                await callService(
+                    "input_boolean",
+                    "turn_" + (video.muted ? "on" : "off"),
+                    { entity_id: ENTITY_MUTE }
+                );
+            } catch (e) {
+                console.error("Error uploading mute state:", e);
+            }
+        }
+
+        /**
+         * Updates the mute button icon (SVG path) based on state.
+         */
+        function updateMuteIcon() {
+            if (video.muted || video.volume === 0) {
+                // Muted Icon
+                muteIconPath.setAttribute("d", "M12,4L9.91,6.09L12,8.18M4.27,3L3,4.27L7.73,9H3V15H7L12,20V13.27L16.25,17.53C15.58,18.04 14.83,18.46 14,18.7V20.77C15.38,20.45 16.63,19.82 17.68,18.96L19.73,21L21,19.73L12,10.73M19,12C19,12.94 18.8,13.82 18.46,14.64L19.97,16.15C20.62,14.91 21,13.5 21,12C21,7.72 18,4.14 14,3.23V5.29C16.89,6.15 19,8.83 19,12M16.5,12C16.5,10.23 15.48,8.71 14,7.97V10.18L16.45,12.63C16.5,12.43 16.5,12.21 16.5,12Z");
+            } else {
+                // Volume Active Icon
+                muteIconPath.setAttribute("d", "M14,3.23V5.29C16.89,6.15 19,8.83 19,12C19,15.17 16.89,17.84 14,18.7V20.77C18,19.86 21,16.28 21,12C21,7.72 18,4.14 14,3.23M16.5,12C16.5,10.23 15.48,8.71 14,7.97V16.02C15.48,15.29 16.5,13.76 16.5,12M3,9V15H7L12,20V4L7,9H3Z");
+            }
+        }
+
+        // --- Display Control ---
         async function toggleFullscreen() {
             if (!document.fullscreenElement) {
-                document.documentElement.requestFullscreen().catch(e => console.log(e));
+                document.documentElement
+                    .requestFullscreen()
+                    .catch((e) => console.log(e));
             } else {
                 if (document.exitFullscreen) document.exitFullscreen();
             }
         }
-        
+
+        // =====================================================================
+        // 7. EVENT LISTENERS & UI LOGIC
+        // =====================================================================
+
+        // Update Fullscreen Icon when state changes (Native Browser Event)
         document.addEventListener("fullscreenchange", () => {
-            const path = document.getElementById('fs-icon-path');
             if (document.fullscreenElement) {
-                path.setAttribute('d', 'M5,16H8V19H10V14H5V16M8,8H5V10H10V5H8V8M14,19H16V16H19V14H14V19M16,8V5H14V10H19V8H16Z');
+                // Show "Exit Fullscreen" icon
+                fsIconPath.setAttribute("d", "M5,16H8V19H10V14H5V16M8,8H5V10H10V5H8V8M14,19H16V16H19V14H14V19M16,8V5H14V10H19V8H16Z");
             } else {
-                path.setAttribute('d', 'M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z');
+                // Show "Enter Fullscreen" icon
+                fsIconPath.setAttribute("d", "M7,14H5V19H10V17H7V14M5,10H7V7H10V5H5V10M19,14H17V17H14V19H19V14M14,5V7H17V10H19V5H14Z");
             }
         });
 
+        // Show UI briefly on interaction (Auto-hide logic)
         function showUI() {
-            uiLayer.classList.add('visible');
+            uiLayer.classList.add("visible");
+
+            // Reset the timer if user keeps moving/clicking (Debounce)
             clearTimeout(uiTimeout);
-            uiTimeout = setTimeout(() => { uiLayer.classList.remove('visible'); }, 3000);
+            uiTimeout = setTimeout(() => {
+                uiLayer.classList.remove("visible");
+                }, 3000);
         }
-        ['mousemove','click','touchstart'].forEach(e => document.addEventListener(e, showUI));
+
+        // Bind interaction events to wake up the UI
+        ["mousemove", "click", "touchstart"].forEach((e) => document.addEventListener(e, showUI));
 
         // =====================================================================
-        // 6. SYSTEM START
+        // 8. SYSTEM START
         // =====================================================================
         showUI();
         updateMuteIcon();
 
-        // Ghost Killer: Pauser video hvis fanen ikke er synlig (Sparer data/CPU)
-        let observer = new IntersectionObserver((entries) => {
-            entries.forEach(entry => {
-                if (entry.isIntersecting) {
-                    video.play().catch(e => console.log("Auto-resume blocked", e));
-                } else {
-                    video.pause();
-                }
-            });
-        }, { threshold: 0.1 });
+        // Ghost Killer: Pauses video if the tab/body is not visible (Saves Data/CPU)
+        let observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting) {
+                        // Resume playback when visible
+                        video.play().catch((e) => console.log("Auto-resume blocked", e));
+                    } else {
+                        // Pause playback when hidden/backgrounded
+                        video.pause();
+                    }
+                });
+            },
+            { threshold: 0.1 }
+        );
         observer.observe(document.body);
 
         // Start Loop
-        setInterval(syncLoop, 1500);
-        syncLoop();
+        setInterval(syncLoop, 1500); // Poll every 1.5 seconds
+        syncLoop(); // Run immediately on load
     </script>
-</body>
+    </body>
 </html>
