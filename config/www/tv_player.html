@@ -65,7 +65,7 @@
     <body>
         <video id="video" autoplay playsinline ondblclick="toggleFullscreen()"></video>
 
-        <div id="pip-overlay" onclick="togglePiP()"><img id="pip-img" alt="Camera Stream" /></div>
+        <div id="pip-overlay" onclick="closePiP()"><img id="pip-img" alt="Camera Stream" /></div>
 
         <img id="channel-logo" src="" alt="Kanal Logo" />
 
@@ -121,6 +121,7 @@
         // Dynamic Variables
         let ENTITY_CAMERA = "";
         let ENTITY_MUTE = "";
+        let ENTITY_PIP = "";
         let ENTITY_VOLUME = "";
 
         // UI Elements (These are const as the element reference does not change)
@@ -137,6 +138,7 @@
         let currentUrl = "";
         let currentLogoUrl = "";
         let hls = null;
+        let lastPipState = false;
         let logoTimeout;
         let uiTimeout;
 
@@ -151,6 +153,22 @@
         function isTokenValid() {
             if (!HA_TOKEN) {
                 console.error("Auth Error: Missing HA_TOKEN.");
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Checks if a variable inside an object wrapper is populated.
+         * Usage: isEntitySynced({ ENTITY_CAMERA })
+         */
+        function isEntitySynced(wrapper) {
+            // Get the variable name (key) and value
+            const name = Object.keys(wrapper)[0];
+            const value = wrapper[name];
+
+            if (!value) {
+                console.error(`System Error: ${name} is missing (wait for sync).`);
                 return false;
             }
             return true;
@@ -233,6 +251,9 @@
             if (attrs.config_entity_mute && ENTITY_MUTE !== attrs.config_entity_mute) {
                 ENTITY_MUTE = attrs.config_entity_mute;
             }
+            if (attrs.config_entity_pip && ENTITY_PIP !== attrs.config_entity_pip) {
+                ENTITY_PIP = attrs.config_entity_pip;
+            }
             if (attrs.config_entity_volume && ENTITY_VOLUME !== attrs.config_entity_volume) {
                 ENTITY_VOLUME = attrs.config_entity_volume;
             }
@@ -291,11 +312,15 @@
             // E. PIP (Reactive State)
             if (attrs.pip_active !== undefined) {
                 const pipActive = attrs.pip_active === true;
-                // Check actual DOM state (block/none) vs requested state
-                const pipOn = pipOverlay.classList.contains("active");
 
-                if (pipActive !== pipOn) {
-                    togglePiP();
+                if (pipActive !== lastPipState) {
+                    lastPipState = pipActive;
+
+                    if (pipActive) {
+                        openPiP();
+                    } else {
+                        closePiP();
+                    }
                 }
             }
         }
@@ -303,43 +328,46 @@
         // =====================================================================
         // 5. FEATURES (PIP & STREAM)
         // =====================================================================
+        /**
+         * Opens the PiP window loads the stream.
+         * Triggered ONLY by the syncLoop (Rising Edge).
+         */
+        async function openPiP() {
+            if (!isEntitySynced({ ENTITY_CAMERA })) return;
+
+            try {
+                const camState = await fetchState(ENTITY_CAMERA);
+                
+                if (camState && camState.attributes.access_token) {
+                    const camToken = camState.attributes.access_token;
+                    
+                    // Add timestamp to force fresh stream
+                    pipImage.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${camToken}&time=${Date.now()}`;
+                    pipOverlay.classList.add("active");
+                }
+            } catch (error) {
+                console.error("PiP Error:", error);
+            }
+        }
 
         /**
-         * Toggles Picture-in-Picture mode.
-         * Fetches a fresh token for the camera if turning on.
+         * Closes the PiP window.
+         * @param {boolean} notifyHA - If true, sends turn_off command to HA.
          */
-        async function togglePiP() {
-            // Guard: Ensure UI elements exist
-            if (!pipOverlay || !pipImage) return;
-
+        async function closePiP() {
+            // Run only if PiP is active
             if (pipOverlay.classList.contains("active")) {
-                // --- ACTION: TURN OFF ---
                 pipOverlay.classList.remove("active");
-                pipImage.src = "";
-            } else {
-                // --- ACTION: TURN ON ---
-                if (!ENTITY_CAMERA) {
-                    console.error("System Error: ENTITY_CAMERA is missing (wait for sync).");
-                    return;
-                }
+                
+                // Cleanup UI
+                setTimeout(() => { pipImage.src = ""; }, 300);
 
-                try {
-                    // 1. Get fresh token
-                    const camState = await fetchState(ENTITY_CAMERA);
+                // Update local memory immediately to prevent syncLoop confusion
+                lastPipState = false; 
 
-                    if (camState && camState.attributes.access_token) {
-                        const camToken = camState.attributes.access_token;
-
-                        // 2. Build URL and Update UI immediately
-                        // Adding Date.now() prevents browser caching of the stream
-                        pipImage.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${camToken}&time=${Date.now()}`;
-                        pipOverlay.classList.add("active");
-                    } else {
-                        console.error("System Error: Could not retrieve access_token.");
-                    }
-                } catch (error) {
-                    console.error("PiP Error:", error);
-                }
+                await callService("input_boolean", "turn_off", { 
+                    entity_id: ENTITY_PIP 
+                });
             }
         }
 
@@ -411,8 +439,7 @@
          * Syncs the volume level back to Home Assistant.
          */
         async function sendVolumeToHA(val) {
-            if (!ENTITY_VOLUME || !areArgsValid(val)) return;
-
+            if (!isEntitySynced({ ENTITY_VOLUME }) || !areArgsValid(val)) return;
             try {
                 await callService("input_number", "set_value", {
                     entity_id: ENTITY_VOLUME,
@@ -438,7 +465,7 @@
             video.muted = !video.muted;
             updateMuteIcon();
 
-            if (!ENTITY_MUTE) return;
+            if (!isEntitySynced({ ENTITY_VOLUME })) return;
             try {
                 // Dynamically call turn_on or turn_off based on new state
                 await callService(
