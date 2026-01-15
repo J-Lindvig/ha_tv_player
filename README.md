@@ -99,59 +99,71 @@ Add this to your `configuration.yaml` (or `template.yaml`):
 # configuration.yaml
 
 template:
-  - triggers:
-      - trigger: state
-        entity_id:
-          - input_select.tv_stream_source
-          - input_number.tv_stream_volume
-          - input_boolean.tv_stream_mute
-          - binary_sensor.carport_object
-          - input_boolean.tv_stream_pip_manual
-      - trigger: homeassistant
-        event: start
-      - trigger: event
-        event_type: event_template_reloaded
-    sensor:
-      - name: "TV Stream Context"
-        unique_id: cfacca7667c34ffca4310d9d46c1334d
-        state: "{{ states('input_select.tv_stream_source') }}"
-        attributes:
-          config_entity_volume: "input_number.tv_stream_volume"
-          config_entity_mute: "input_boolean.tv_stream_mute"
-          config_entity_camera: "camera.carport_fluent_lens_1"
-          sources: >
-            {% set base_url = "[https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=](https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=)" %}
-            {% set map = {
-              "DR 1": {
-                "image": base_url ~ 2344192,
-                "url": "[https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8](https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8)"
-              },
-              "DR 2": {
-                "image": base_url ~ 46461911,
-                "url": "[https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8](https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8)"
-              },
-              "TVA": {
-                "image": base_url ~ 16100144,
-                "url": "[https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8](https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8)"
-              },
-              "Ramasjang": {
-                "image": base_url ~ 2399380,
-                "url": "[https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8](https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8)"
-              },
-              "Storebælt": {
-                "image": "/local/images/icons/storebælt_tv.jpg",
-                "url": "[https://stream.sob.m-dn.net/live/sb1/index.m3u8](https://stream.sob.m-dn.net/live/sb1/index.m3u8)"
-              }
-            } %}
-            {{ map }}
-          stream_url: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
-          stream_image: "{{ this.attributes.sources.get(states('input_select.tv_stream_source'), {'image': ''}).image }}"
-          stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
-          stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
-          # PiP Logic: Active if motion sensor is ON OR Manual Override is ON
-          pip_active: >-
-            {{ is_state('binary_sensor.carport_object', 'on') 
-               or is_state('input_boolean.tv_stream_pip_manual', 'on') }}
+    - triggers:
+        - trigger: state
+          entity_id:
+            - input_select.tv_stream_source
+            - input_number.tv_stream_volume
+            - input_boolean.tv_stream_mute
+            - binary_sensor.hoveddor_aktivitet
+            - binary_sensor.carport_aktivitet
+            - input_boolean.tv_stream_pip_manual
+        - trigger: homeassistant
+          event: start
+        - trigger: event
+          event_type: event_template_reloaded
+      variables:
+        default_cam: camera.carport_fluent_lens_1
+        pip_logic_result: >-
+          {% set pip_map = [
+            { "trigger": "binary_sensor.hoveddor_aktivitet", "camera": "camera.hoveddor" },
+            { "trigger": "binary_sensor.carport_aktivitet", "camera": default_cam }
+          ] %}
+
+          {% set active_event = pip_map | selectattr('trigger', 'is_state', 'on') | first %}
+          {% set is_active = (active_event is defined) or is_state('input_boolean.tv_stream_pip_manual', 'on') %}
+          {% set selected_cam = active_event.camera if (active_event is defined) else default_cam %}
+
+          {{ { "active": is_active, "camera": selected_cam } }}
+        sources_data: >
+          {% set base_url = "https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=" %}
+          {% set sources_map = {
+            "DR 1": {
+              "image": base_url ~ 2344192,
+              "url": "https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8"
+            },
+            "DR 2": {
+              "image": base_url ~ 46461911,
+              "url": "https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8"
+            },
+            "TVA": {
+              "image": base_url ~ 16100144,
+              "url": "https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8"
+            },
+            "Ramasjang": {
+              "image": base_url ~ 2399380,
+              "url": "https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8"
+            },
+            "Storebælt": {
+              "image": "/local/images/icons/storebælt_tv.jpg",
+              "url": "https://stream.sob.m-dn.net/live/sb1/index.m3u8"
+            }
+          } %}
+          {{ sources_map }}
+      sensor:
+        - name: "TV Stream Context"
+          unique_id: cfacca7667c34ffca4310d9d46c1334d
+          state: "{{ states('input_select.tv_stream_source') }}"
+          attributes:
+            sources: "{{ sources_data }}"
+            pip_active: "{{ pip_logic_result.active }}"
+            config_entity_volume: "input_number.tv_stream_volume"
+            config_entity_mute: "input_boolean.tv_stream_mute"
+            config_entity_camera: "{{ pip_logic_result.camera }}"
+            stream_url: "{{ sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
+            stream_image: "{{ sources.get(states('input_select.tv_stream_source'), {'image': ''}).image }}"
+            stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
+            stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
 ```
 
 ### Step 4: Dashboard Card
