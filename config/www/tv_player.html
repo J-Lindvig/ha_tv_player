@@ -34,6 +34,57 @@
             }
             #ui-layer.visible { opacity: 1; }
 
+            /* Program Info Overlay */
+            #program-info {
+                position: absolute; bottom: 110px; left: 40px; z-index: 15;
+                max-width: 65%;
+                
+                /* Layout */
+                display: flex; flex-direction: row; align-items: flex-start; gap: 25px;
+                
+                /* Visuals (Background & Blur) */
+                background: rgba(0, 0, 0, 0.85); /* Dark semi-transparent */
+                padding: 25px;
+                border-radius: 12px;
+                backdrop-filter: blur(8px); /* Frosted glass effect */
+                box-shadow: 0 5px 15px rgba(0,0,0,0.5);
+
+                /* Animation */
+                opacity: 0; transition: opacity 0.5s ease; pointer-events: none;
+            }
+            #program-info.visible { opacity: 1; }
+
+            #prog-poster {
+                width: 260px; height: auto; border-radius: 6px;
+                box-shadow: 0 2px 8px rgba(0,0,0,0.5); object-fit: cover;
+                display: none; flex-shrink: 0;
+                margin-top: 5px;
+            }
+            #prog-poster.has-image { display: block; }
+
+            .prog-text {
+                color: white;
+                margin-top: 0;
+            }
+            
+            #prog-title {
+                margin: 0 0 8px 0; 
+                font-size: 36px; /* Increased from 24px */
+                font-weight: 700;
+                line-height: 1.1;
+            }
+            #prog-desc {
+                margin: 0; 
+                font-size: 20px; /* Increased from 16px */
+                line-height: 1.4;
+                opacity: 0.9;
+                color: #ddd;
+                
+                /* Limit to max 3 lines */
+                display: -webkit-box; -webkit-line-clamp: 3;
+                -webkit-box-orient: vertical; overflow: hidden;
+            }
+
             /* OSD Channel Logo */
             #channel-logo {
                 position: absolute; top: 40px; left: 40px; z-index: 25;
@@ -68,6 +119,14 @@
         <div id="pip-overlay" onclick="closePiP()"><img id="pip-img" alt="Camera Stream" /></div>
 
         <img id="channel-logo" src="" alt="Kanal Logo" />
+
+        <div id="program-info">
+            <img id="prog-poster" src="" />
+            <div class="prog-text">
+                <h2 id="prog-title"></h2>
+                <p id="prog-desc"></p>
+            </div>
+        </div>
 
         <div id="ui-layer">
             <button id="mute-btn" class="icon-btn" onclick="toggleMute()">
@@ -130,14 +189,20 @@
         const muteIconPath = document.getElementById("mute-icon-path");
         const pipImage = document.getElementById("pip-img");
         const pipOverlay = document.getElementById("pip-overlay");
+        const progDescEl = document.getElementById('prog-desc');
+        const progInfoEl = document.getElementById('program-info');
+        const progPosterEl = document.getElementById('prog-poster');
+        const progTitleEl = document.getElementById('prog-title');
         const uiLayer = document.getElementById("ui-layer");
         const video = document.getElementById("video");
         const volSlider = document.getElementById("vol-control");
 
         // Player State
-        let currentUrl = "";
         let currentLogoUrl = "";
+        let currentProgramTitle = "";
+        let currentUrl = "";
         let hls = null;
+        let infoTimeout;
         let lastPipState = false;
         let logoTimeout;
         let uiTimeout;
@@ -145,34 +210,6 @@
         // =====================================================================
         // 3. API HELPERS
         // =====================================================================
-
-        /**
-         * Checks if the Home Assistant auth token is present.
-         * Returns true if valid, otherwise logs error and returns false.
-         */
-        function isTokenValid() {
-            if (!HA_TOKEN) {
-                console.error("Auth Error: Missing HA_TOKEN.");
-                return false;
-            }
-            return true;
-        }
-
-        /**
-         * Checks if a variable inside an object wrapper is populated.
-         * Usage: isEntitySynced({ ENTITY_CAMERA })
-         */
-        function isEntitySynced(wrapper) {
-            // Get the variable name (key) and value
-            const name = Object.keys(wrapper)[0];
-            const value = wrapper[name];
-
-            if (!value) {
-                console.error(`System Error: ${name} is missing (wait for sync).`);
-                return false;
-            }
-            return true;
-        }
 
         /**
          * Validates that all passed arguments are truthy (not null/undefined/empty).
@@ -187,6 +224,25 @@
                 return false;
             }
             return true;
+        }
+
+        /**
+         * Calls a Home Assistant service (e.g., input_boolean.turn_on).
+         * Fire-and-forget (does not return the response).
+         */
+        async function callService(domain, service, data = {}) {
+            // Guards: Ensure we have token, domain, and service
+            if (!isTokenValid()) return;
+            if (!areArgsValid(domain, service)) return;
+
+            await fetch(`${HA_URL}/api/services/${domain}/${service}`, {
+                method: "POST",
+                headers: {
+                Authorization: `Bearer ${HA_TOKEN}`,
+                "Content-Type": "application/json",
+                },
+                body: JSON.stringify(data),
+            });
         }
 
         /**
@@ -214,22 +270,31 @@
         }
 
         /**
-         * Calls a Home Assistant service (e.g., input_boolean.turn_on).
-         * Fire-and-forget (does not return the response).
+         * Checks if a variable inside an object wrapper is populated.
+         * Usage: isEntitySynced({ ENTITY_CAMERA })
          */
-        async function callService(domain, service, data = {}) {
-            // Guards: Ensure we have token, domain, and service
-            if (!isTokenValid()) return;
-            if (!areArgsValid(domain, service)) return;
+        function isEntitySynced(wrapper) {
+            // Get the variable name (key) and value
+            const name = Object.keys(wrapper)[0];
+            const value = wrapper[name];
 
-            await fetch(`${HA_URL}/api/services/${domain}/${service}`, {
-                method: "POST",
-                headers: {
-                Authorization: `Bearer ${HA_TOKEN}`,
-                "Content-Type": "application/json",
-                },
-                body: JSON.stringify(data),
-            });
+            if (!value) {
+                console.error(`System Error: ${name} is missing (wait for sync).`);
+                return false;
+            }
+            return true;
+        }
+
+        /**
+         * Checks if the Home Assistant auth token is present.
+         * Returns true if valid, otherwise logs error and returns false.
+         */
+        function isTokenValid() {
+            if (!HA_TOKEN) {
+                console.error("Auth Error: Missing HA_TOKEN.");
+                return false;
+            }
+            return true;
         }
 
         // =====================================================================
@@ -323,32 +388,25 @@
                     }
                 }
             }
+
+            // F. PROGRAM INFO (Metadata)
+            const newTitle = attrs.stream_title;
+            
+            // Check if title changed (DRY: Only update DOM on change)
+            if (newTitle && newTitle !== currentProgramTitle) {
+                currentProgramTitle = newTitle;
+                
+                showProgramInfo(
+                    newTitle, 
+                    attrs.stream_description, 
+                    attrs.stream_poster
+                );
+            }
         }
 
         // =====================================================================
         // 5. FEATURES (PIP & STREAM)
         // =====================================================================
-        /**
-         * Opens the PiP window loads the stream.
-         * Triggered ONLY by the syncLoop (Rising Edge).
-         */
-        async function openPiP() {
-            if (!isEntitySynced({ ENTITY_CAMERA })) return;
-
-            try {
-                const camState = await fetchState(ENTITY_CAMERA);
-                
-                if (camState && camState.attributes.access_token) {
-                    const camToken = camState.attributes.access_token;
-                    
-                    // Add timestamp to force fresh stream
-                    pipImage.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${camToken}&time=${Date.now()}`;
-                    pipOverlay.classList.add("active");
-                }
-            } catch (error) {
-                console.error("PiP Error:", error);
-            }
-        }
 
         /**
          * Closes the PiP window.
@@ -368,6 +426,28 @@
                 await callService("input_boolean", "turn_off", { 
                     entity_id: ENTITY_PIP 
                 });
+            }
+        }
+
+        /**
+         * Opens the PiP window loads the stream.
+         * Triggered ONLY by the syncLoop (Rising Edge).
+         */
+        async function openPiP() {
+            if (!isEntitySynced({ ENTITY_CAMERA })) return;
+
+            try {
+                const camState = await fetchState(ENTITY_CAMERA);
+                
+                if (camState && camState.attributes.access_token) {
+                    const camToken = camState.attributes.access_token;
+                    
+                    // Add timestamp to force fresh stream
+                    pipImage.src = `${HA_URL}/api/camera_proxy_stream/${ENTITY_CAMERA}?token=${camToken}&time=${Date.now()}`;
+                    pipOverlay.classList.add("active");
+                }
+            } catch (error) {
+                console.error("PiP Error:", error);
             }
         }
 
@@ -420,21 +500,34 @@
         // 6. UI INTERACTIONS
         // =====================================================================
 
-        // --- Volume Control ---
         /**
-         * Sets the volume locally on the video element.
-         * Automatically unmutes if volume is raised above 0.
+         * Updates and shows the program info overlay.
+         * Hides automatically after 5 seconds.
          */
-        function setVolume(val) {
-            if (!areArgsValid(val)) return;
+        function showProgramInfo(title, desc, poster) {
+            // Update Text
+            progTitleEl.textContent = title || "";
+            progDescEl.textContent = desc || "";
 
-            video.volume = val;
-            if (val > 0 && video.muted) {
-                video.muted = false;
-                updateMuteIcon();
+            // Update Poster (Handle visibility based on src existence)
+            if (poster) {
+                progPosterEl.src = poster;
+                progPosterEl.classList.add('has-image');
+            } else {
+                progPosterEl.classList.remove('has-image');
             }
+
+            // Show UI
+            progInfoEl.classList.add('visible');
+
+            // Reset Timer (Debounce)
+            clearTimeout(infoTimeout);
+            infoTimeout = setTimeout(() => {
+                progInfoEl.classList.remove('visible');
+            }, 5000);
         }
 
+        // --- Volume Control ---
         /**
          * Syncs the volume level back to Home Assistant.
          */
@@ -454,6 +547,20 @@
                 }
             } catch (e) {
                 console.error("Error uploading volume:", e);
+            }
+        }
+
+        /**
+         * Sets the volume locally on the video element.
+         * Automatically unmutes if volume is raised above 0.
+         */
+        function setVolume(val) {
+            if (!areArgsValid(val)) return;
+
+            video.volume = val;
+            if (val > 0 && video.muted) {
+                video.muted = false;
+                updateMuteIcon();
             }
         }
 
