@@ -20,29 +20,31 @@ input_select:
   tv_stream_source:
     name: TV Stream Source
     options:
-      - DR 1
-      - DR 2
-      - TVA
-      - Ramasjang
-      - Storebælt
+      - DUMMY
     icon: mdi:television
 
 template:
     - triggers:
         - trigger: state
           entity_id:
-            - input_select.tv_stream_source
-            - input_number.tv_stream_volume
-            - input_boolean.tv_stream_mute
-            - binary_sensor.hoveddor_aktivitet
             - binary_sensor.carport_aktivitet
+            - binary_sensor.hoveddor_aktivitet
+            - input_boolean.tv_stream_mute
             - input_boolean.tv_stream_pip_manual
+            - input_number.tv_stream_volume
+            - input_select.tv_stream_source
+            - sensor.drtv_master_data
         - trigger: homeassistant
           event: start
         - trigger: event
           event_type: event_template_reloaded
       variables:
+        data_sensor: sensor.drtv_master_data
         default_cam: camera.carport_fluent_lens_1
+        channel_selector: input_select.tv_stream_source
+
+        # --- PIP Logic Calculation ---
+        # Determines which camera to show based on motion or manual override
         pip_logic_result: >-
           {% set pip_map = [
             { "trigger": "binary_sensor.hoveddor_aktivitet", "camera": "camera.hoveddor" },
@@ -54,43 +56,112 @@ template:
           {% set selected_cam = active_event.camera if (active_event is defined) else default_cam %}
 
           {{ { "active": is_active, "camera": selected_cam } }}
+
+        # --- Source Data Aggregation ---
+        # Combines Dynamic (DRTV), Manual (Fallback), and Custom channels
         sources_data: >
-          {% set base_url = "https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=" %}
-          {% set sources_map = {
-            "DR 1": {
-              "image": base_url ~ 2344192,
-              "url": "https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8"
-            },
-            "DR 2": {
-              "image": base_url ~ 46461911,
-              "url": "https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8"
-            },
-            "TVA": {
-              "image": base_url ~ 16100144,
-              "url": "https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8"
-            },
-            "Ramasjang": {
-              "image": base_url ~ 2399380,
-              "url": "https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8"
-            },
-            "Storebælt": {
-              "image": "/local/images/icons/storebælt_tv.jpg",
-              "url": "https://stream.sob.m-dn.net/live/sb1/index.m3u8"
+          {% set ns = namespace(channels = {}) %}
+
+          {# 1. CHECK: Verify if dynamic data from Pyscript is available #}
+          {% set raw_data = state_attr(data_sensor, 'channels').items() %}
+
+          {% if has_value(data_sensor) and raw_data %}
+
+          {# --- METHOD A: DYNAMIC (Pyscript) --- #}
+            {# Iterate through the dynamic data and structure it #}
+            {% for name, data in raw_data %}
+              {% set new_item = {
+                name: {
+                  'image': data.logo,
+                  'title': data.title,
+                  'description': data.description,
+                  'poster': data.poster,
+                  'url': data.primary_stream
+                }
+              } %}
+              {% set ns.channels = dict(ns.channels, **new_item) %}
+            {% endfor %}
+          {% else %}
+
+            {# --- METHOD B: MANUAL (Fallback) --- #}
+            {# Used if Pyscript is not installed or unavailable #}
+            {% set base_url = "https://prod95-static.dr-massive.com/api/shain/v1/dataservice/ResizeImage/$value?Format=%27png%27&Quality=90&Width=320&Height=320&ImageId=" %}
+            
+            {# Note: Empty fields for title/desc/poster added to match data structure #}
+            {% set ns.channels = {
+              "DR1": {
+                "image": base_url ~ "2344192",
+                "url": "https://drlivedr1hls.akamaized.net/hls/live/2113625/drlivedr1/master.m3u8",
+                "title": "DR1 (Live)", "description": "DR1 Live Stream", "poster": ""
+              },
+              "DR2": {
+                "image": base_url ~ "46461911",
+                "url": "https://drlivedr2hls.akamaized.net/hls/live/2113623/drlivedr2/master.m3u8",
+                "title": "DR2 (Live)", "description": "DR2 Live Stream", "poster": ""
+              },
+              "TVA Live": {
+                "image": base_url ~ "16100144",
+                "url": "https://drlivedrtvahls.akamaized.net/hls/live/2113613/drlivedrtva/master.m3u8",
+                "title": "TVA (Live)", "description": "TV Avisen Live Stream", "poster": ""
+              },
+              "DR Ramasjang": {
+                "image": base_url ~ "2399380",
+                "url": "https://drlivedrrhls.akamaized.net/hls/live/2113621/drlivedrr/master.m3u8",
+                "title": "Ramasjang (Live)", "description": "Ramasjang Live Stream", "poster": ""
+              }
+            } %}
+          {% endif %}
+
+          {# --- 2. CUSTOM CHANNELS (Static) --- #}
+          {# Define extra channels that are always present #}
+          {% set custom_channels = {
+            'Storebælt': {
+              'image': '/local/images/icons/storebaelt_tv.jpg',
+              'title': 'Storebælt tårnet',
+              'description': 'Følg med live fra toppen af den østlige pylon på Storebæltsbroen.',
+              'poster': '/local/images/icons/storebaelt_tv.jpg',
+              'url': 'https://stream.sob.m-dn.net/live/sb1/index.m3u8'
             }
           } %}
-          {{ sources_map }}
+
+          {# --- 3. MERGE --- #}
+          {# Consolidate all sources into one dictionary #}
+          {% set ns.channels = dict(ns.channels, **custom_channels) %}
+
+          {# --- 4. OUTPUT --- #}
+          {{ ns.channels }}
+
+      # --- Actions ---
+      # Updates the Input Select options dynamically based on the keys found above
+      actions:
+        - action: input_select.set_options
+          target:
+            entity_id: "{{ channel_selector }}"
+          data:
+            options: "{{ sources_data.keys() | list }}"
+
+      # --- Sensor Definition ---
+      # Exposes the selected stream data and configuration to the frontend
       sensor:
         - name: "TV Stream Context"
           unique_id: cfacca7667c34ffca4310d9d46c1334d
           state: "{{ states('input_select.tv_stream_source') }}"
           attributes:
+            # Configuration
             config_entity_camera: "{{ pip_logic_result.camera }}"
             config_entity_mute: "input_boolean.tv_stream_mute"
             config_entity_pip: "input_boolean.tv_stream_pip_manual"
             config_entity_volume: "input_number.tv_stream_volume"
-            pip_active: "{{ pip_logic_result.active }}"
+
+            # Stream Data
             sources: "{{ sources_data }}"
-            stream_image: "{{ sources.get(states('input_select.tv_stream_source'), {'image': ''}).image }}"
+            stream_title: "{{ sources.get(states(channel_selector), {'title': ''}).title }}"
+            stream_description: "{{ sources.get(states(channel_selector), {'description': ''}).description }}"
+            stream_url: "{{ sources.get(states(channel_selector), {'url': ''}).url }}"
+            stream_image: "{{ sources.get(states(channel_selector), {'image': ''}).image }}"
+            stream_poster: "{{ sources.get(states(channel_selector), {'poster': ''}).poster }}"
+
+            # Stream Data
+            pip_active: "{{ pip_logic_result.active }}"
             stream_mute: "{{ is_state('input_boolean.tv_stream_mute', 'on') }}"
-            stream_url: "{{ sources.get(states('input_select.tv_stream_source'), {'url': ''}).url }}"
             stream_volume: "{{ states('input_number.tv_stream_volume') | float(0.5) }}"
