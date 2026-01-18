@@ -20,7 +20,11 @@ input_select:
   tv_stream_source:
     name: TV Stream Source
     options:
-      - DUMMY
+      - DR 1
+      - DR 2
+      - TVA
+      - Ramasjang
+      - Storebælt
     icon: mdi:television
 
 template:
